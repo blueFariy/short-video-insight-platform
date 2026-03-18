@@ -12,24 +12,51 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from app.api.v1 import api_router
 from app.core.config import settings
+from app.core.logging import init_logging
+from app.core.handlers import register_exception_handlers
+from app.core.database import db_manager
+from app.core.redis_client import redis_manager
+from app.core.elasticsearch_client import es_manager
+from app.middleware import RequestIDMiddleware, LoggingMiddleware
+from app.api.v1 import api_router
 
-# Configure logger
-logger.add(
-    "logs/user-service.log",
-    rotation="500 MB",
-    retention="10 days",
-    level="INFO"
-)
+
+# Initialize logging
+init_logging()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     logger.info("User Service starting up...")
+
+    # Initialize database
+    db_manager.init_db()
+    logger.info("Database initialized")
+
+    # Initialize Redis
+    try:
+        await redis_manager.init_redis()
+        logger.info("Redis initialized")
+    except Exception as e:
+        logger.warning(f"Redis initialization failed: {e}")
+
+    # Initialize Elasticsearch
+    try:
+        await es_manager.init_elasticsearch()
+        logger.info("Elasticsearch initialized")
+    except Exception as e:
+        logger.warning(f"Elasticsearch initialization failed: {e}")
+
     yield
+
+    # Cleanup
     logger.info("User Service shutting down...")
+    await redis_manager.close()
+    await es_manager.close()
+    await db_manager.close()
+    logger.info("All connections closed")
 
 
 app = FastAPI(
@@ -41,7 +68,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# Register exception handlers
+register_exception_handlers(app)
+
+# Add middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -49,6 +79,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(RequestIDMiddleware)
 
 
 @app.get("/health")
