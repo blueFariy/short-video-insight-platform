@@ -1,0 +1,86 @@
+# ==================
+# 前端 (Vue + TypeScript)
+# ==================
+# 依赖目录 [citation:2]
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# 构建产物
+dist/
+dist-ssr/
+*.local
+
+# 编辑器/IDE目录 (如果使用，建议全局忽略，这里作为项目级保险) [citation:1][citation:4]
+.idea/
+.vscode/
+*.sw?
+*.swo
+*~
+
+# ==================
+# 后端 (Python)
+# ==================
+# Python 字节码/缓存 [citation:4]
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python 虚拟环境 (根据常用命名调整) [citation:4]
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*
+
+# 常见Python包/工具生成的文件
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# ==================
+# 操作系统垃圾文件 [citation:4]
+# ==================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ==================
+# 配置文件与环境变量 (⚠️ 非常重要)
+# ==================
+# 包含敏感信息的配置文件
+.env
+.env.local
+.env.*.local
+*.pem
+**/secrets/
+**/config/local.py
+
+# ==================
+# 日志与临时文件
+# ==================
+*.log
+*.tmp
+*.temp
