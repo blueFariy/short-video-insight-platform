@@ -1,0 +1,3 @@
+"""
+Insight Generator Application
+"""
