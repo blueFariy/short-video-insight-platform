@@ -15,6 +15,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'AI分析报告' }
   },
   {
+    path: '/library',
+    name: 'Library',
+    component: () => import('@/views/library/Library.vue'),
+    meta: { title: '素材库' }
+  },
+  {
     path: '/monitor',
     name: 'Monitor',
     component: () => import('@/views/monitor/Monitor.vue'),

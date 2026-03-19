@@ -196,7 +196,7 @@ class VideoDownloader:
 
         cmd = [
             "yt-dlp",
-            "--extractor-args", "douyin:imp=1",
+            "--extractor-args", "douyin:imp=chrome;client_type=web",
             "--cookies", "cookies_douyin.txt",
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "-o", str(output_path),

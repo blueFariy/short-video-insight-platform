@@ -2,8 +2,11 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
+
 const loginForm = ref({
   username: '',
   password: ''
@@ -17,12 +20,16 @@ const handleLogin = async () => {
   }
 
   loading.value = true
-  // Simulate login
-  setTimeout(() => {
-    loading.value = false
+  try {
+    await authStore.login(loginForm.value.username, loginForm.value.password)
     ElMessage.success('登录成功')
     router.push('/')
-  }, 1000)
+  } catch (error: any) {
+    // Error is handled by axios interceptor
+    console.error('Login failed:', error)
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
