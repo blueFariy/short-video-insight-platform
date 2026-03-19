@@ -1,11 +1,11 @@
 /**
  * API Service - Axios HTTP Client
  */
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
+import axios, { AxiosInstance, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 
 // Base URL configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001'
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8001'
 
 // Create axios instance
 const service: AxiosInstance = axios.create({
@@ -118,13 +118,13 @@ export const API_URL = {
   // Competitor Monitor (port 8005)
   MONITOR: {
     METRICS: '/api/v1/monitor/metrics',
-    METRICS_DETAIL: (id: string) => `/api/v1/monitor/metrics/${id}`,
-    METRICS_TREND: (id: string) => `/api/v1/monitor/metrics/${id}/trend`,
+    METRICS_DETAIL: (id: string) => '/api/v1/monitor/metrics/' + id,
+    METRICS_TREND: (id: string) => '/api/v1/monitor/metrics/' + id + '/trend',
     METRICS_COMPARE: '/api/v1/monitor/metrics/compare',
     ALERTS: '/api/v1/monitor/alerts',
-    CHECK_ALERTS: (id: string) => `/api/v1/monitor/alerts/check/${id}`,
-    ALERT_ACK: (id: string) => `/api/v1/monitor/alerts/${id}/acknowledge`,
-    ALERT_RESOLVE: (id: string) => `/api/v1/monitor/alerts/${id}/resolve`
+    CHECK_ALERTS: (id: string) => '/api/v1/monitor/alerts/check/' + id,
+    ALERT_ACK: (id: string) => '/api/v1/monitor/alerts/' + id + '/acknowledge',
+    ALERT_RESOLVE: (id: string) => '/api/v1/monitor/alerts/' + id + '/resolve'
   },
 
   // Report Service (port 8006)

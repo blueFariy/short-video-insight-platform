@@ -16,7 +16,7 @@ pytest==8.3.4
 pytest-asyncio==0.24.0
 
 # Optional: ASR
-openai-whisper==20231117
+# openai-whisper==20231117
 
 # Optional: OCR
 easyocr==1.7.0

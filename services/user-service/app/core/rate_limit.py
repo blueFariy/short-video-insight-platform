@@ -72,7 +72,7 @@ class RateLimiter:
         client_id = self._get_client_id(key)
 
         if client_id not in self.calls or not self.calls[client_id]:
-            return current_time = time.time()
+            return time.time()
 
         current_time = time.time()
         valid_calls = [

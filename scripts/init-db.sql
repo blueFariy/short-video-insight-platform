@@ -17,10 +17,11 @@ CREATE TABLE IF NOT EXISTS users (
     last_login TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE,
     subscription_tier VARCHAR(20) DEFAULT 'free',
-    subscription_expires TIMESTAMPTZ,
-    INDEX idx_users_email (email),
-    INDEX idx_users_username (username)
+    subscription_expires TIMESTAMPTZ
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
 -- Creators table
 CREATE TABLE IF NOT EXISTS creators (
@@ -38,9 +39,10 @@ CREATE TABLE IF NOT EXISTS creators (
     main_category VARCHAR(50),
     stats_updated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(platform, creator_id),
-    INDEX idx_creators_follower (follower_count DESC)
+    UNIQUE(platform, creator_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_creators_follower ON creators(follower_count DESC);
 
 -- Videos table
 CREATE TABLE IF NOT EXISTS videos (
@@ -67,12 +69,13 @@ CREATE TABLE IF NOT EXISTS videos (
     is_denoised BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(platform, video_id),
-    INDEX idx_videos_platform_publish (platform, publish_time),
-    INDEX idx_videos_play_count (play_count DESC),
-    INDEX idx_videos_category (category),
-    INDEX idx_videos_creator (creator_id)
+    UNIQUE(platform, video_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_videos_platform_publish ON videos(platform, publish_time);
+CREATE INDEX IF NOT EXISTS idx_videos_play_count ON videos(play_count DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_category ON videos(category);
+CREATE INDEX IF NOT EXISTS idx_videos_creator ON videos(creator_id);
 
 -- Video Scripts table
 CREATE TABLE IF NOT EXISTS video_scripts (
@@ -86,9 +89,10 @@ CREATE TABLE IF NOT EXISTS video_scripts (
     bgm_info JSONB,
     audio_emotion VARCHAR(20),
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    INDEX idx_video_scripts_video (video_id)
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_video_scripts_video ON video_scripts(video_id);
 
 -- Video Insights table
 CREATE TABLE IF NOT EXISTS video_insights (
@@ -105,11 +109,12 @@ CREATE TABLE IF NOT EXISTS video_insights (
     comment_high_freq TEXT[],
     user_feedback JSONB,
     viral_factors JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    INDEX idx_video_insights_video (video_id),
-    INDEX idx_video_insights_hook_type (hook_type),
-    INDEX idx_video_insights_structure (structure_type)
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_video_insights_video ON video_insights(video_id);
+CREATE INDEX IF NOT EXISTS idx_video_insights_hook_type ON video_insights(hook_type);
+CREATE INDEX IF NOT EXISTS idx_video_insights_structure ON video_insights(structure_type);
 
 -- Collections table
 CREATE TABLE IF NOT EXISTS collections (
@@ -121,10 +126,11 @@ CREATE TABLE IF NOT EXISTS collections (
     tags TEXT[],
     folder VARCHAR(100),
     is_favorite BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    INDEX idx_collections_user (user_id),
-    INDEX idx_collections_item (item_type, item_id)
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_collections_user ON collections(user_id);
+CREATE INDEX IF NOT EXISTS idx_collections_item ON collections(item_type, item_id);
 
 -- Competitor Watch table
 CREATE TABLE IF NOT EXISTS competitor_watch (
@@ -136,9 +142,10 @@ CREATE TABLE IF NOT EXISTS competitor_watch (
     last_alert_at TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(user_id, creator_id),
-    INDEX idx_competitor_watch_user (user_id)
+    UNIQUE(user_id, creator_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_competitor_watch_user ON competitor_watch(user_id);
 
 -- Trend Reports table
 CREATE TABLE IF NOT EXISTS trend_reports (
@@ -155,7 +162,8 @@ CREATE TABLE IF NOT EXISTS trend_reports (
     period_end DATE NOT NULL,
     related_videos BIGINT[],
     related_creators BIGINT[],
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    INDEX idx_trend_reports_period (period_start, period_end),
-    INDEX idx_trend_reports_type (report_type)
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_trend_reports_period ON trend_reports(period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_trend_reports_type ON trend_reports(report_type);

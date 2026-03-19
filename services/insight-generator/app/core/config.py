@@ -26,12 +26,13 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
-    # AI Models - Zhipu (智谱AI)
-    ZHIPU_API_KEY: str = ""
-    ZHIPU_MODEL: str = "glm-4"
+    # AI Models - DeepSeek
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
 
     # AI Models - Select default provider
-    AI_PROVIDER: str = "zhipu"  # "openai" or "zhipu"
+    AI_PROVIDER: str = "deepseek"  # "openai" or "deepseek"
 
     # Analysis
     ANALYSIS_TEMP_DIR: str = "./temp/analysis"

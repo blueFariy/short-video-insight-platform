@@ -1,5 +1,5 @@
 """
-AI Service - Supports Zhipu GLM-4 and OpenAI GPT-4
+AI Service - Supports DeepSeek and OpenAI GPT-4
 """
 import json
 import asyncio
@@ -18,8 +18,9 @@ class AIService:
         self.openai_api_key = settings.OPENAI_API_KEY
         self.openai_model = settings.OPENAI_MODEL
         self.openai_base_url = settings.OPENAI_BASE_URL
-        self.zhipu_api_key = settings.ZHIPU_API_KEY
-        self.zhipu_model = settings.ZHIPU_MODEL
+        self.deepseek_api_key = settings.DEEPSEEK_API_KEY
+        self.deepseek_model = settings.DEEPSEEK_MODEL
+        self.deepseek_base_url = settings.DEEPSEEK_BASE_URL
 
     async def chat(
         self,
@@ -42,8 +43,8 @@ class AIService:
         """
         if self.provider == "openai":
             return await self._chat_openai(messages, system_prompt, temperature, max_tokens)
-        elif self.provider == "zhipu":
-            return await self._chat_zhipu(messages, system_prompt, temperature, max_tokens)
+        elif self.provider == "deepseek":
+            return await self._chat_deepseek(messages, system_prompt, temperature, max_tokens)
         else:
             raise AIException(f"Unknown AI provider: {self.provider}")
 
@@ -96,14 +97,14 @@ class AIService:
             logger.error(f"OpenAI chat error: {e}")
             raise AIException(f"OpenAI chat failed: {str(e)}")
 
-    async def _chat_zhipu(
+    async def _chat_deepseek(
         self,
         messages: List[Dict[str, str]],
         system_prompt: Optional[str],
         temperature: float,
         max_tokens: int
     ) -> str:
-        """Zhipu GLM-4 chat"""
+        """DeepSeek chat"""
         try:
             import aiohttp
 
@@ -114,27 +115,27 @@ class AIService:
             full_messages.extend(messages)
 
             payload = {
-                "model": self.zhipu_model,
+                "model": self.deepseek_model,
                 "messages": full_messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens
             }
 
             headers = {
-                "Authorization": f"Bearer {self.zhipu_api_key}",
+                "Authorization": f"Bearer {self.deepseek_api_key}",
                 "Content-Type": "application/json"
             }
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                    f"{self.deepseek_base_url}/chat/completions",
                     json=payload,
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=120)
                 ) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
-                        raise AIException(f"Zhipu API error: {error_text}")
+                        raise AIException(f"DeepSeek API error: {error_text}")
 
                     result = await resp.json()
                     return result["choices"][0]["message"]["content"]
@@ -142,8 +143,8 @@ class AIService:
         except AIException:
             raise
         except Exception as e:
-            logger.error(f"Zhipu chat error: {e}")
-            raise AIException(f"Zhipu chat failed: {str(e)}")
+            logger.error(f"DeepSeek chat error: {e}")
+            raise AIException(f"DeepSeek chat failed: {str(e)}")
 
     async def analyze_video(
         self,

@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
-const loading = ref(false)
 
 // Placeholder data
 const todayInsights = ref([

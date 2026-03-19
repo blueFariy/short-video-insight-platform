@@ -26,7 +26,7 @@ export const useAuthStore = defineStore('auth', () => {
   const login = async (username: string, password: string) => {
     loading.value = true
     try {
-      const data = await service.post(API_URL.USER.LOGIN, { username, password })
+      const data = await service.post(API_URL.USER.LOGIN, { username, password }) as any
       token.value = data.token
       userInfo.value = data.user
       localStorage.setItem('token', data.token)
@@ -55,7 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
   const fetchUserInfo = async () => {
     if (!token.value) return null
     try {
-      const data = await service.get(API_URL.USER.PROFILE)
+      const data = await service.get(API_URL.USER.PROFILE) as any
       userInfo.value = data
       return data
     } catch (error) {
@@ -65,8 +65,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const updateProfile = async (profile: Partial<User>) => {
-    const data = await service.put(API_URL.USER.PROFILE, profile)
-    userInfo.value = { ...userInfo.value, ...profile }
+    const data = await service.put(API_URL.USER.PROFILE, profile) as any
+    userInfo.value = { ...userInfo.value as User, ...profile }
     return data
   }
 

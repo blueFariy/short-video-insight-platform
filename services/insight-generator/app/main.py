@@ -2,6 +2,11 @@
 Insight Generator Service - Main Entry Point
 """
 import sys
+from pathlib import Path
+
+# Add parent directory to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,7 +36,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager"""
     logger.info(f"{settings.SERVICE_NAME} starting up...")
     logger.info(f"AI Provider: {settings.AI_PROVIDER}")
-    logger.info(f"AI Model: {settings.ZHIPU_MODEL if settings.AI_PROVIDER == 'zhipu' else settings.OPENAI_MODEL}")
+    logger.info(f"AI Model: {settings.DEEPSEEK_MODEL if settings.AI_PROVIDER == 'deepseek' else settings.OPENAI_MODEL}")
 
     # Startup
     yield

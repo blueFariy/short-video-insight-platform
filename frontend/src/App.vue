@@ -30,10 +30,6 @@ const handleCommand = (command: string) => {
     }).catch(() => {})
   }
 }
-
-const handleLogout = () => {
-  handleCommand('logout')
-}
 </script>
 
 <template>

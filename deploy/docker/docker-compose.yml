@@ -1,0 +1,291 @@
+# Short Video Insight Platform - Docker Compose
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: short-video-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: short_video_insight
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: short-video-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: short-video-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # User Service
+  user-service:
+    build:
+      context: ../../services/user-service
+      dockerfile: Dockerfile
+    container_name: short-video-user-service
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    develop:
+      watch:
+        - action: sync
+          path: ../../services/user-service  # 监听整个服务目录
+          target: /app
+          ignore: # 排除不需要同步的目录
+            - __pycache__/
+            - .pytest_cache/
+            - .git/
+            - .venv/
+            - venv/
+            - .idea/
+            - .vscode/
+        - action: rebuild
+          path: ../../services/user-service/requirements.txt  # 依赖变更时重建
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Video Service
+  video-service:
+    build:
+      context: ../../services/video-service
+      dockerfile: Dockerfile
+    container_name: short-video-video-service
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+    volumes:
+      - ./cookies:/app/cookies
+      - ./downloads:/app/downloads
+      - ./temp:/app/temp
+    develop:
+      watch:
+        - action: sync
+          path: ../../services/video-service  # 监听整个服务目录
+          target: /app
+          ignore: # 排除不需要同步的目录
+            - __pycache__/
+            - .pytest_cache/
+            - .git/
+            - .venv/
+            - venv/
+            - .idea/
+            - .vscode/
+        - action: rebuild
+          path: ../../services/video-service/requirements.txt  # 依赖变更时重建
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+  # Insight Service
+  insight-service:
+    build:
+      context: ../../services/insight-generator
+      dockerfile: Dockerfile
+    container_name: short-video-insight-service
+    ports:
+      - "8003:8003"
+    develop:
+      watch:
+        - action: sync
+          path: ../../services/insight-service  # 监听整个服务目录
+          target: /app
+          ignore: # 排除不需要同步的目录
+            - __pycache__/
+            - .pytest_cache/
+            - .git/
+            - .venv/
+            - venv/
+            - .idea/
+            - .vscode/
+        - action: rebuild
+          path: ../../services/insight-service/requirements.txt  # 依赖变更时重建
+    environment:
+      - AI_PROVIDER=deepseek
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+
+  # Data Collector Service
+  data-collector:
+    build:
+      context: ../../services/data-collector
+      dockerfile: Dockerfile
+    container_name: short-video-data-collector
+    ports:
+      - "8004:8004"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    develop:
+      watch:
+        - action: sync
+          path: ../../services/data-collector  # 监听整个服务目录
+          target: /app
+          ignore: # 排除不需要同步的目录
+            - __pycache__/
+            - .pytest_cache/
+            - .git/
+            - .venv/
+            - venv/
+            - .idea/
+            - .vscode/
+        - action: rebuild
+          path: ../../services/data-collector/requirements.txt  # 依赖变更时重建
+
+  # Competitor Monitor Service
+  competitor-monitor:
+    build:
+      context: ../../services/competitor-monitor
+      dockerfile: Dockerfile
+    container_name: short-video-competitor-monitor
+    ports:
+      - "8005:8005"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    develop:
+      watch:
+        - action: sync
+          path: ../../services/competitor-monitor  # 监听整个服务目录
+          target: /app
+          ignore: # 排除不需要同步的目录
+            - __pycache__/
+            - .pytest_cache/
+            - .git/
+            - .venv/
+            - venv/
+            - .idea/
+            - .vscode/
+        - action: rebuild
+          path: ../../services/competitor-monitor/requirements.txt  # 依赖变更时重建
+
+  # Report Service
+  report-service:
+    build:
+      context: ../../services/report-service
+      dockerfile: Dockerfile
+    container_name: short-video-report-service
+    ports:
+      - "8006:8006"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
+    develop:
+      watch:
+        - action: sync
+          path: ../../services/report-service  # 监听整个服务目录
+          target: /app
+          ignore: # 排除不需要同步的目录
+            - __pycache__/
+            - .pytest_cache/
+            - .git/
+            - .venv/
+            - venv/
+            - .idea/
+            - .vscode/
+        - action: rebuild
+          path: ../../services/report-service/requirements.txt  # 依赖变更时重建
+
+  # Frontend
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: short-video-frontend
+    ports:
+      - "3000:80"
+    develop:
+      watch:
+        # 监听源代码目录（热重载）
+        - action: sync
+          path: ../../frontend/src
+          target: /app/src
+          ignore:
+            - node_modules/
+
+        # 监听公共资源目录
+        - action: sync
+          path: ../../frontend/public
+          target: /app/public
+          ignore:
+            - node_modules/
+
+        # 监听配置文件（需要重启）
+        - action: sync+restart
+          path: ../../frontend/vite.config.ts
+          target: /app/vite.config.ts
+
+        - action: sync+restart
+          path: ../../frontend/index.html
+          target: /app/index.html
+
+        # 依赖变更时重建
+        - action: rebuild
+          path: ../../frontend/package.json
+
+        - action: rebuild
+          path: ../../frontend/yarn.lock
+        - action: rebuild
+          path: ../../frontend/package-lock.json
+    depends_on:
+      - user-service
+      - video-service
+
+volumes:
+  postgres_data:
+  redis_data:
+  elasticsearch_data:
+
+networks:
+  default:
+    name: short-video-network

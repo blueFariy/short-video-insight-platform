@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import service, { API_URL } from '@/api'
 
-const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const videoUrl = ref('')
@@ -32,7 +31,7 @@ const handleAnalyze = async () => {
     const videoData = await service.post(API_URL.VIDEO.PROCESS, {
       url: videoUrl.value,
       platform: videoPlatform.value || undefined
-    })
+    }) as any
 
     // Call insight service for comprehensive analysis
     const insightData = await service.post(API_URL.INSIGHT.COMPREHENSIVE, {
@@ -40,7 +39,7 @@ const handleAnalyze = async () => {
       video_script: videoData.script || '',
       keyframes: videoData.keyframes || [],
       duration: videoData.duration
-    })
+    }) as any
 
     analysisResult.value = {
       video: {
@@ -195,7 +194,7 @@ const handleSave = () => {
           </div>
           <div class="dimension-scores">
             <div class="dimension" v-for="(value, key) in analysisResult.insight.overall.dimensions" :key="key">
-              <span class="dim-label">{{ key.replace('_score', '') }}</span>
+              <span class="dim-label">{{ String(key).replace('_score', '') }}</span>
               <el-progress :percentage="value" :stroke-width="8" />
             </div>
           </div>

@@ -5,6 +5,8 @@ import os
 import re
 import json
 import asyncio
+import time
+
 import aiohttp
 import subprocess
 from typing import Optional, Dict, Any
@@ -21,6 +23,57 @@ class VideoPlatform:
     BILIBILI = "bilibili"
     XIAOHONGSHU = "xiaohongshu"
     UNKNOWN = "unknown"
+
+
+async def _get_video_info_from_path(output_path: Path, platform: str, video_md5: str) -> Dict[str, Any]:
+    """从下载的文件获取视频信息"""
+    # 尝试从同名的json文件获取信息
+    json_path = output_path.with_suffix('').with_suffix('.info.json')
+
+    title = ""
+    cover_url = ""
+    duration = 0
+
+    if json_path.exists():
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                video_info = json.load(f)
+                title = video_info.get("title", "")
+                cover_url = video_info.get("thumbnail", "")
+                duration = video_info.get("duration", 0)
+        except Exception as e:
+            logger.warning(f"Failed to read info json: {e}")
+
+    # 如果没有json信息，使用yt-dlp获取
+    if not title:
+        try:
+            info_cmd = ["yt-dlp", "--dump-json", str(output_path)]
+            process = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    info_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False
+                )
+            )
+            if process.returncode == 0:
+                video_info = json.loads(process.stdout)
+                title = video_info.get("title", "")
+                cover_url = video_info.get("thumbnail", "")
+                duration = video_info.get("duration", 0)
+        except Exception as e:
+            logger.warning(f"Failed to get video info: {e}")
+            title = output_path.stem
+
+    return {
+        "platform": platform,
+        "video_id": video_md5,
+        "title": title,
+        "video_path": str(output_path),
+        "cover_url": cover_url,
+        "duration": duration
+    }
 
 
 class VideoDownloader:
@@ -76,42 +129,7 @@ class VideoDownloader:
         if not video_id:
             raise ValueError(f"Cannot extract video ID from URL: {url}")
 
-        # 方法1: 使用移动端API (不需要cookies)
-        try:
-            mobile_api_url = f"https://aweme-hl.muscdn.com/aweme/v1/web/aweme/videostream/?aweme_id={video_id}&vr_type=0&is_play_url=1"
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(mobile_api_url, headers=self._get_headers()) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        video_url = data.get("play_url", {}).get("url") or data.get("data", {}).get("play_url", {}).get("url")
-
-                        if video_url:
-                            # 获取视频信息
-                            info_url = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={video_id}"
-                            async with session.get(info_url, headers=self._get_headers()) as info_resp:
-                                info_data = await info_resp.json() if info_resp.status == 200 else {}
-                            video_info = info_data.get("aweme_detail", {})
-
-                            title = video_info.get("desc", "")
-                            cover_url = video_info.get("video", {}).get("cover", {}).get("url_list", [{}])[0].get("url")
-                            duration = video_info.get("video", {}).get("duration", 0) / 1000
-
-                            output_path = self.download_dir / f"douyin_{video_id}.mp4"
-                            await self._download_file(video_url, output_path)
-
-                            return {
-                                "platform": VideoPlatform.DOUYIN,
-                                "video_id": video_id,
-                                "title": title,
-                                "video_path": str(output_path),
-                                "cover_url": cover_url,
-                                "duration": duration
-                            }
-        except Exception as e:
-            logger.warning(f"Mobile API method failed: {e}")
-
-        # 方法2: 使用yt-dlp with extractor-args to bypass login
+        # 使用yt-dlp 下载视频
         try:
             return await self._download_with_ytdlp(url, VideoPlatform.DOUYIN)
         except Exception as e:
@@ -191,58 +209,80 @@ class VideoDownloader:
 
     async def _download_with_ytdlp(self, url: str, platform: str) -> Dict[str, Any]:
         """使用yt-dlp下载视频"""
-        video_id = self._generate_video_id(url)
-        output_path = self.download_dir / f"{platform}_{video_id}.mp4"
+        video_md5 = self._generate_video_id(url)
+        video_id = re.search(r'(\d+)', url).group(1)
+        output_path = self.download_dir / f"{platform}_{video_md5}.mp4"
 
+        # 检查视频是否已经下载过
+        if output_path.exists() and output_path.stat().st_size > 0:
+            logger.info(f"Video already exists: {output_path}")
+            return await _get_video_info_from_path(output_path, platform, video_md5)
+
+        # 构建yt-dlp命令
         cmd = [
             "yt-dlp",
             "--extractor-args", "douyin:imp=chrome;client_type=web",
-            "--cookies", "cookies_douyin.txt",
+            "--cookies", "cookies/cookies_douyin.txt",
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "-o", str(output_path),
             "--no-playlist",
-            url
+            f"https://www.douyin.com/note/{video_id}",
         ]
 
         try:
             # 使用run_in_executor在Windows上执行子进程
             loop = asyncio.get_event_loop()
+            # 执行下载
             process = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    check=False
+                    timeout=300,  # 5分钟超时
+                    check=False,
                 )
             )
 
-            if process.returncode == 0:
-                # 获取视频信息
-                info_cmd = ["yt-dlp", "--dump-json", url]
-                info_process = await loop.run_in_executor(
-                    None,
-                    lambda: subprocess.run(
-                        info_cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        check=False
-                    )
-                )
-                video_info = json.loads(info_process.stdout)
+            stderr_output = process.stderr.decode('utf-8', errors='ignore')
 
-                return {
-                    "platform": platform,
-                    "video_id": video_id,
-                    "title": video_info.get("title", ""),
-                    "video_path": str(output_path),
-                    "cover_url": video_info.get("thumbnail", ""),
-                    "duration": video_info.get("duration", 0)
-                }
-            else:
-                raise Exception(f"yt-dlp failed: {process.stderr.decode()}")
+            # 处理 yt-dlp 的返回码
+            if process.returncode != 0:
+                # yt-dlp 返回非0不一定就是错误，可能是警告
+                # 检查文件是否存在
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    logger.warning(f"yt-dlp returned non-zero code but file exists. stderr: {stderr_output[:200]}")
+                else:
+                    logger.error(f"yt-dlp failed: {stderr_output}")
+                    raise Exception(f"yt-dlp failed: {stderr_output}")
+
+            # 等待文件生成
+            file_ready = False
+            for i in range(30):  # 最多等待30秒
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    file_ready = True
+                    break
+                await asyncio.sleep(1)
+
+            if not file_ready:
+                raise Exception(f"File not ready after download: {output_path}")
+
+            # 额外等待一小段时间确保文件写入完成
+            await asyncio.sleep(0.5)
+
+            file_size = output_path.stat().st_size
+            logger.info(f"Video downloaded successfully: {output_path} ({file_size} bytes)")
+
+            # 获取视频信息
+            return await _get_video_info_from_path(output_path, platform, video_md5)
+
+        except subprocess.TimeoutExpired:
+            raise Exception("yt-dlp download timeout")
         except FileNotFoundError:
             raise Exception("yt-dlp not installed. Please install: pip install yt-dlp")
+        except Exception as e:
+            logger.error(f"Download error: {e}")
+            raise
 
     async def _download_file(self, url: str, output_path: Path) -> None:
         """下载文件"""

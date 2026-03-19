@@ -1,0 +1,76 @@
+# User Service Kubernetes Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: short-video-insight
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: short-video-user-service:latest
+          ports:
+            - containerPort: 8001
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: short-video-config
+                  key: DATABASE_URL
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: short-video-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: short-video-config
+                  key: REDIS_PORT
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: short-video-secrets
+                  key: JWT_SECRET
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+# User Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  namespace: short-video-insight
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8001
+      targetPort: 8001
+  selector:
+    app: user-service
