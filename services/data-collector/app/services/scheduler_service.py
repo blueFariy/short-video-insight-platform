@@ -12,14 +12,14 @@ class ScheduledTask:
     """Scheduled task model"""
 
     def __init__(
-        self,
-        id: str,
-        name: str,
-        func: Callable,
-        interval: int,  # seconds
-        enabled: bool = True,
-        last_run: Optional[datetime] = None,
-        next_run: Optional[datetime] = None
+            self,
+            id: str,
+            name: str,
+            func: Callable,
+            interval: int,  # seconds
+            enabled: bool = True,
+            last_run: Optional[datetime] = None,
+            next_run: Optional[datetime] = None
     ):
         self.id = id
         self.name = name
@@ -49,12 +49,12 @@ class SchedulerService:
         self._task_handle: Optional[asyncio.Task] = None
 
     async def add_task(
-        self,
-        task_id: str,
-        name: str,
-        func: Callable,
-        interval: int,
-        enabled: bool = True
+            self,
+            task_id: str,
+            name: str,
+            func: Callable,
+            interval: int,
+            enabled: bool = True
     ) -> ScheduledTask:
         """Add a scheduled task"""
         task = ScheduledTask(
@@ -126,7 +126,7 @@ class SchedulerService:
         while self.running:
             try:
                 now = datetime.now()
-
+                print("tasks:", self.tasks.values())
                 for task in self.tasks.values():
                     if not task.enabled:
                         continue

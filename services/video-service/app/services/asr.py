@@ -79,12 +79,15 @@ class ASRService:
             "-v", "quiet"
         ]
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        loop = asyncio.get_event_loop()
+        process = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
         )
-        await process.communicate()
 
         if not audio_path.exists():
             raise Exception("Audio extraction failed")
@@ -122,13 +125,16 @@ class ASRService:
         ]
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=self.temp_dir
+            loop = asyncio.get_event_loop()
+            process = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=self.temp_dir
+                )
             )
-            stdout, stderr = await process.communicate()
 
             # 读取输出JSON
             json_path = audio_path.with_suffix(".json")

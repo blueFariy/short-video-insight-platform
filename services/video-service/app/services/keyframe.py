@@ -74,15 +74,18 @@ class KeyframeExtractor:
         ]
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            loop = asyncio.get_event_loop()
+            process = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
             )
-            stdout, _ = await process.communicate()
 
             if process.returncode == 0:
-                data = json.loads(stdout)
+                data = json.loads(process.stdout)
                 return self._parse_video_info(data)
             else:
                 logger.warning("ffprobe failed, using file stats")

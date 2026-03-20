@@ -126,102 +126,103 @@ class CollectorService:
         return results
 
     async def _collect_douyin(self, account: Account, limit: int) -> List[VideoInfo]:
-        """Collect from Douyin"""
-        # In production, this would use yt-dlp or Douyin API
-        # For demo, return simulated data
-        videos = []
-        for i in range(min(5, limit)):
-            video = VideoInfo(
-                video_id=f"dy_{account.account_id}_{i}",
-                title=f"抖音视频标题 {i+1} - {account.name}",
-                platform="douyin",
-                account_id=account.account_id,
-                account_name=account.name,
-                url=f"https://v.douyin.com/xxx{i}/",
-                cover_url=f"https://picsum.photos/400/300?random={i}",
-                duration=60 + i * 30,
-                likes=1000 + i * 500,
-                comments=50 + i * 20,
-                shares=10 + i * 5,
-                views=10000 + i * 2000,
-                publish_time=datetime.now()
-            )
-            videos.append(video)
-            self.collected_videos[video.video_id] = video
-
-        return videos
+        """Collect from Douyin - 使用适配器爬取真实数据"""
+        from app.adapters import get_platform_adapter
+        
+        try:
+            adapter = get_platform_adapter("douyin")
+            videos = await adapter.get_trending_videos(limit=limit)
+            
+            return [
+                VideoInfo(
+                    video_id=v.video_id,
+                    title=v.title,
+                    platform=v.platform,
+                    account_id=account.account_id,
+                    account_name=account.name,
+                    url=v.url or f"https://v.douyin.com/{v.video_id}/",
+                    cover_url=v.cover_url or "",
+                    duration=v.duration or 0,
+                    likes=v.metrics.like_count if v.metrics else 0,
+                    comments=v.metrics.comment_count if v.metrics else 0,
+                    shares=v.metrics.share_count if v.metrics else 0,
+                    views=v.metrics.play_count if v.metrics else 0,
+                    publish_time=v.publish_time
+                )
+                for v in videos
+            ]
+        except Exception as e:
+            logger.error(f"Failed to collect from Douyin: {e}")
+            return []
 
     async def _collect_bilibili(self, account: Account, limit: int) -> List[VideoInfo]:
-        """Collect from Bilibili"""
-        videos = []
-        for i in range(min(5, limit)):
-            video = VideoInfo(
-                video_id=f"bilibili_{account.account_id}_{i}",
-                title=f"B站视频标题 {i+1} - {account.name}",
-                platform="bilibili",
-                account_id=account.account_id,
-                account_name=account.name,
-                url=f"https://www.bilibili.com/video/BV{i+1:04d}/",
-                cover_url=f"https://picsum.photos/400/300?random={i+10}",
-                duration=300 + i * 60,
-                likes=5000 + i * 1000,
-                comments=200 + i * 50,
-                shares=100 + i * 20,
-                views=50000 + i * 10000,
-                publish_time=datetime.now()
-            )
-            videos.append(video)
-            self.collected_videos[video.video_id] = video
-
-        return videos
+        """Collect from Bilibili - 使用适配器爬取真实数据"""
+        from app.adapters import get_platform_adapter
+        
+        try:
+            adapter = get_platform_adapter("bilibili")
+            
+            if account.account_id:
+                videos = await adapter.get_creator_videos(account.account_id, limit=limit)
+            else:
+                videos = await adapter.get_trending_videos(limit=limit)
+            
+            return [
+                VideoInfo(
+                    video_id=v.video_id,
+                    title=v.title,
+                    platform=v.platform,
+                    account_id=account.account_id,
+                    account_name=account.name,
+                    url=v.url or f"https://www.bilibili.com/video/{v.video_id}/",
+                    cover_url=v.cover_url or "",
+                    duration=v.duration or 0,
+                    likes=v.metrics.like_count if v.metrics else 0,
+                    comments=v.metrics.danmaku_count if v.metrics else 0,
+                    shares=v.metrics.share_count if v.metrics else 0,
+                    views=v.metrics.play_count if v.metrics else 0,
+                    publish_time=v.publish_time
+                )
+                for v in videos
+            ]
+        except Exception as e:
+            logger.error(f"Failed to collect from Bilibili: {e}")
+            return []
 
     async def _collect_xiaohongshu(self, account: Account, limit: int) -> List[VideoInfo]:
-        """Collect from Xiaohongshu"""
-        videos = []
-        for i in range(min(5, limit)):
-            video = VideoInfo(
-                video_id=f"xhs_{account.account_id}_{i}",
-                title=f"小红书笔记 {i+1} - {account.name}",
-                platform="xiaohongshu",
-                account_id=account.account_id,
-                account_name=account.name,
-                url=f"https://www.xiaohongshu.com/discovery/item/{i+1}",
-                cover_url=f"https://picsum.photos/400/300?random={i+20}",
-                duration=30 + i * 15,
-                likes=2000 + i * 500,
-                comments=100 + i * 30,
-                shares=50 + i * 10,
-                views=20000 + i * 5000,
-                publish_time=datetime.now()
-            )
-            videos.append(video)
-            self.collected_videos[video.video_id] = video
-
-        return videos
+        """Collect from Xiaohongshu - 使用适配器爬取真实数据"""
+        from app.adapters import get_platform_adapter
+        
+        try:
+            adapter = get_platform_adapter("xiaohongshu")
+            videos = await adapter.get_trending_videos(limit=limit)
+            
+            return [
+                VideoInfo(
+                    video_id=v.video_id,
+                    title=v.title,
+                    platform=v.platform,
+                    account_id=account.account_id,
+                    account_name=account.name,
+                    url=v.url or f"https://www.xiaohongshu.com/discovery/item/{v.video_id}",
+                    cover_url=v.cover_url or "",
+                    duration=v.duration or 0,
+                    likes=v.metrics.like_count if v.metrics else 0,
+                    comments=v.metrics.comment_count if v.metrics else 0,
+                    shares=v.metrics.share_count if v.metrics else 0,
+                    views=v.metrics.play_count if v.metrics else 0,
+                    publish_time=v.publish_time
+                )
+                for v in videos
+            ]
+        except Exception as e:
+            logger.error(f"Failed to collect from Xiaohongshu: {e}")
+            return []
 
     async def _collect_kuaishou(self, account: Account, limit: int) -> List[VideoInfo]:
-        """Collect from Kuaishou"""
-        videos = []
-        for i in range(min(5, limit)):
-            video = VideoInfo(
-                video_id=f"ks_{account.account_id}_{i}",
-                title=f"快手视频 {i+1} - {account.name}",
-                platform="kuaishou",
-                account_id=account.account_id,
-                account_name=account.name,
-                url=f"https://www.kuaishou.com/short-video/{i+1}",
-                cover_url=f"https://picsum.photos/400/300?random={i+30}",
-                duration=45 + i * 20,
-                likes=1500 + i * 300,
-                comments=80 + i * 25,
-                shares=20 + i * 8,
-                views=15000 + i * 3000,
-                publish_time=datetime.now()
-            )
-            videos.append(video)
-            self.collected_videos[video.video_id] = video
-
-        return videos
+        """Collect from Kuaishou - 暂不支持真实爬取"""
+        logger.warning("Kuaishou scraping not implemented yet, returning empty list")
+        return []
 
     async def get_video(self, video_id: str) -> Optional[VideoInfo]:
         """Get video by ID"""

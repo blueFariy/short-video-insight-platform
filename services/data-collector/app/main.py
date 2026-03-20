@@ -1,6 +1,7 @@
 """
 Data Collector Service - Main Entry Point
 """
+import asyncio
 import sys
 from pathlib import Path
 
@@ -38,7 +39,6 @@ async def lifespan(app: FastAPI):
 
     # Start scheduler
     from app.services.scheduler_service import scheduler_service
-    await scheduler_service.start()
 
     # Add default collection task
     await scheduler_service.add_task(
@@ -48,6 +48,8 @@ async def lifespan(app: FastAPI):
         interval=settings.COLLECTION_INTERVAL,
         enabled=False  # Disabled by default
     )
+
+    await scheduler_service.start()
 
     yield
 
@@ -96,10 +98,30 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host=settings.SERVICE_HOST,
-        port=settings.SERVICE_PORT,
-        reload=True
-    )
+    # import uvicorn
+    # uvicorn.run(
+    #     "main:app",
+    #     host=settings.SERVICE_HOST,
+    #     port=settings.SERVICE_PORT,
+    #     reload=True
+    # )
+    from app.adapters.douyin_adapter import get_douyin_adapter
+    async def xx():
+        adapter = get_douyin_adapter(cookie='cookies/cookies_douyin.txt')
+        results = await adapter.get_trending_videos()
+        print(results)
+        for result in results:
+            if result.title == '把春天妆在脸上':
+                search_videos = await adapter.search_videos(result.title)
+                print(search_videos)
+                video = await adapter.get_video_detail(search_videos[0].video_id)
+                print(video)
+                account_info = await adapter.get_creator_info(video.creator_id)
+                print(account_info)
+                account_videos = await adapter.get_creator_videos(video.creator_id)
+                print(account_videos)
+                account_video = account_videos[0]
+                comments = await adapter.get_video_comments(account_video.video_id)
+                print(comments)
+                break
+    asyncio.run(xx())
