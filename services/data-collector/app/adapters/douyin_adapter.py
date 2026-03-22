@@ -2,7 +2,9 @@
 Douyin (TikTok China) Data Adapter
 基于 DouK-Downloader API 服务 (http://127.0.0.1:5555)
 """
+import asyncio
 import json
+import os
 from http.cookiejar import MozillaCookieJar
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -91,7 +93,7 @@ class DouKAPI:
             hot_list = []
             for item in word_list:
                 hot_list.append({
-                    "word": item.get('word', ''),
+                    "title": item.get('word', ''),
                     "hot_value": item.get('hot_value', 0),
                     "label": item.get('label', 0),  # 0=普通, 1=热搜, 2=上升, 3=爆
                     "position": item.get('position', 0),
@@ -105,6 +107,9 @@ class DouKAPI:
             logger.error(f"Failed to get hot search list: {e}")
             return []
 
+    """
+        DouK免费接口（失效）
+    """
     # async def search_videos(
     #         self,
     #         keyword: str,
@@ -138,6 +143,9 @@ class DouKAPI:
     #         return result.get("list", [])
     #     return []
 
+    """
+        网页端/移动端接口（失效）
+    """
     async def search_videos(
             self,
             keyword: str,
@@ -177,6 +185,7 @@ class DouKAPI:
         url = f"https://www.douyin.com/aweme/v1/web/search/item/"
 
         data = {
+            # 网页端接口 https://www.douyin.com/aweme/v1/web/search/item/
             "device_platform": "webapp",
             "aid": "6383",
             "keyword": keyword,
@@ -188,6 +197,15 @@ class DouKAPI:
             "search_source": "search_sug",
             "search_id": "",
             "query_correct_type": 1,
+            # 移动端接口 https://aweme.snssdk.com/aweme/v1/search/item/
+            # "keyword": keyword,
+            # "count": count,
+            # "cursor": cursor,
+            # "search_source": "search_sug",
+            # "type": 1,  # 0=综合, 1=视频
+            # "hot_search": sort_type,
+            # "version_code": "260300",
+            # "device_platform": "android",
         }
 
         result = await self._get(url, data, cookies=cookie)
@@ -502,7 +520,7 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
             self,
             douk_url: str = "http://127.0.0.1:5555",
             token: str = None,
-            cookie: str = 'cookies/cookies_douyin.txt',
+            cookie: str = None,
             proxy: str = None
     ):
         super().__init__()
@@ -514,8 +532,16 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
         self.cookie = None
         self.cookie_dict = None
         self.proxy = proxy
-        # 加载cookies
-        self._load_cookies(cookie)
+        # 加载cookies（如果没有提供则使用默认路径）
+        if cookie:
+            self._load_cookies(cookie)
+        else:
+            # 尝试默认路径
+            default_cookie = os.path.join(os.path.dirname(__file__), 'cookies_douyin.txt')
+            if os.path.exists(default_cookie):
+                self._load_cookies(default_cookie)
+            else:
+                logger.warning("No cookie file provided and default not found, some features may be limited")
 
         # 初始化API客户端
         self.api = DouKAPI(base_url=douk_url, token=token)
@@ -524,7 +550,8 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
 
     async def get_trending_videos(
             self,
-            limit: int = 100
+            limit: int = 100,
+            count: int = 5,
     ) -> List[Video]:
         """
         获取抖音热搜列表
@@ -533,13 +560,13 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
         返回热榜标题、热度值、label
         
         Args:
-            category: 分类筛选（暂不支持，仅作兼容）
-            limit: 返回数量限制
+            limit: 返回热搜数量限制
+            count: 返回每个热搜相关视频数量
             
         Returns:
             热搜列表，每项包含: word, hot_value, label
         """
-        logger.info(f"Fetching trending hot words from Douyin, limit: {limit}")
+        logger.info(f"Fetching trending hot words from Douyin, limit: {limit}， count: {count}")
 
         try:
             # 调用热搜API
@@ -549,51 +576,20 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
                 logger.warning("No hot search data fetched")
                 return []
 
-            # 转换为Video对象（仅包含热搜信息）
-            videos = []
+            tasks = []
             for item in hot_list[:limit]:
-                # 使用热度值作为play_count
-                metrics = VideoMetrics(
-                    video_id=f"hot_{item.get('word', '')}",
-                    platform='douyin',
-                    play_count=item.get('hot_value', 0),
-                    like_count=0,
-                    comment_count=0,
-                    share_count=0,
-                    favorite_count=0
-                )
+                title = item.get('title', '')
+                task = self.search_videos(keyword=title, limit=count, sort_by="hot")
+                tasks.append(task)
 
-                # 根据label设置爆款特征
-                viral_factors = {}
-                label = item.get('label', 0)
-                if label == 3:
-                    viral_factors['is_boom'] = True  # 爆
-                elif label == 2:
-                    viral_factors['is_rising'] = True  # 上升
-                elif label == 1:
-                    viral_factors['is_hot'] = True  # 热搜
-
-                video = Video(
-                    video_id=f"hot_{item.get('word', '')}",
-                    platform='douyin',
-                    title=item.get('word', ''),  # 热搜标题
-                    url=f"https://www.douyin.com/search/{item.get('word', '')}",
-                    creator_id='',
-                    creator_name='',
-                    cover_url='',
-                    duration=0,
-                    metrics=metrics,
-                    publish_time=None,
-                    viral_factors=viral_factors
-                )
-                videos.append(video)
-
-            logger.info(f"Fetched {len(videos)} hot search words")
+                # ✅ 并发执行所有搜索
+            videos = await asyncio.gather(*tasks, return_exceptions=True)
             return videos
 
         except Exception as e:
             logger.error(f"Failed to get trending videos: {e}")
-            return []
+        return []
+
 
     async def search_videos(
             self,
@@ -686,10 +682,11 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
             logger.error(f"Failed to search videos: {e}")
             return []
 
+
     async def get_video_detail(self, video_id: str) -> Optional[Video]:
         """
         获取视频详情
-        
+
         Args:
             video_id: 抖音视频ID (aweme_id)
         """
@@ -710,6 +707,7 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
         except Exception as e:
             logger.error(f"Failed to get video detail: {e}")
             return None
+
 
     async def get_video_comments(
             self,
@@ -742,10 +740,11 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
             logger.error(f"Failed to get comments: {e}")
             return []
 
+
     async def get_creator_info(self, sec_uid: str) -> Optional[Creator]:
         """
         获取创作者信息
-        
+
         Args:
             sec_uid: 创作者 sec_uid
         """
@@ -774,6 +773,7 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
         except Exception as e:
             logger.error(f"Failed to get creator info: {e}")
             return None
+
 
     async def get_creator_videos(
             self,
@@ -815,6 +815,7 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
             logger.error(f"Failed to get creator videos: {e}")
             return []
 
+
     def _load_cookies(self, cookie_file: str) -> None:
         """
         从Netscape格式的cookies.txt文件加载cookies
@@ -831,9 +832,10 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
         for cookie in cookie_jar:
             cookies_dict[cookie.name] = cookie.value
 
-        print(f"✅ 成功加载 {len(cookies_dict)} 个cookies")
+        logger.info(f"Successfully loaded {len(cookies_dict)} cookies")
         self.cookie_dict = cookies_dict
         self.cookie = '; '.join([f"{k}={v}" for k, v in cookies_dict.items()])
+
 
     def _parse_video_data(self, data: Dict[str, Any]) -> Video:
         """解析DouK返回的视频数据"""
@@ -868,6 +870,7 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
             video_id=data.get("id", ""),
             platform="douyin",
             title=data.get("desc", ""),
+            description=data.get("desc", ""),
             url=f"https://www.douyin.com/video/{data.get('id', '')}",
             creator_id=data.get("sec_uid", ""),
             creator_name=data.get("nickname", ""),
@@ -879,6 +882,7 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
         )
 
         return video
+
 
     def _detect_viral_patterns(self, data: Dict, metrics: VideoMetrics) -> Dict[str, Any]:
         """检测抖音爆款特征"""

@@ -3,7 +3,7 @@ Platform Adapters
 """
 from app.adapters.base import PlatformAdapter
 from app.adapters.douyin_adapter import DouyinAdapter, get_douyin_adapter
-from app.adapters.bilibili_adapter import BilibiliAdapter, bilibili_adapter
+from app.adapters.bilibili_adapter import BilibiliAdapter, get_bilibili_adapter
 from app.adapters.xiaohongshu_adapter import XiaohongshuAdapter, xiaohongshu_adapter
 
 
@@ -18,8 +18,8 @@ def get_platform_adapter(platform: str) -> PlatformAdapter:
         Platform adapter instance
     """
     adapters = {
-        'douyin': get_douyin_adapter(),
-        'bilibili': bilibili_adapter,
+        'douyin': get_douyin_adapter(cookie="app/cookies/cookies_douyin.txt"),
+        'bilibili': get_bilibili_adapter(cookie="app/cookies/cookies_bilibili.txt"),
         'xiaohongshu': xiaohongshu_adapter,
     }
 

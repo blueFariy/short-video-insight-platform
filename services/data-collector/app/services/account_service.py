@@ -1,14 +1,18 @@
 """
-Account Management Service
+Account Management Service - Using PostgreSQL Database
 """
-import json
+import uuid
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from loguru import logger
+from sqlalchemy import select, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import db_manager, MonitoredAccount
 
 
 class Account:
-    """Competitor account model"""
+    """Competitor account model (for API compatibility)"""
 
     def __init__(
         self,
@@ -32,6 +36,21 @@ class Account:
         self.last_collection_time = last_collection_time
         self.created_at = created_at or datetime.now()
 
+    @classmethod
+    def from_db_model(cls, db_account: MonitoredAccount) -> "Account":
+        """Create from database model"""
+        return cls(
+            id=db_account.id,
+            name=db_account.name,
+            platform=db_account.platform,
+            account_id=db_account.account_id,
+            url=db_account.url,
+            category=db_account.category,
+            status=db_account.status,
+            last_collection_time=db_account.last_collection_time,
+            created_at=db_account.created_at
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -47,55 +66,29 @@ class Account:
 
 
 class AccountService:
-    """Account management service"""
+    """Account management service using database"""
 
     def __init__(self):
-        # In-memory storage (replace with database in production)
-        self.accounts: Dict[str, Account] = {}
-        self._init_demo_accounts()
+        self._initialized = False
 
-    def _init_demo_accounts(self):
-        """Initialize demo accounts"""
-        demo_accounts = [
-            Account(
-                id="acc_001",
-                name="疯狂小杨哥",
-                platform="douyin",
-                account_id="xiaoyange",
-                url="https://v.douyin.com/5j2Fkh/",
-                category="搞笑",
-                status="active"
-            ),
-            Account(
-                id="acc_002",
-                name="罗永浩",
-                platform="douyin",
-                account_id="laohu",
-                url="https://v.douyin.com/5j3Gki/",
-                category="科技",
-                status="active"
-            ),
-            Account(
-                id="acc_003",
-                name="老高与小茉",
-                platform="bilibili",
-                account_id="BV1GJ411x7h7",
-                url="https://space.bilibili.com/3368963",
-                category="知识",
-                status="active"
-            ),
-            Account(
-                id="acc_004",
-                name="李子柒",
-                platform="xiaohongshu",
-                account_id="Liziqi",
-                url="https://www.xiaohongshu.com/user/profile/5a123456",
-                category="生活",
-                status="active"
-            )
-        ]
-        for account in demo_accounts:
-            self.accounts[account.id] = account
+    async def _ensure_initialized(self):
+        """Ensure database is initialized"""
+        if not self._initialized:
+            try:
+                db_manager.init_db()
+                await db_manager.create_tables()
+                self._initialized = True
+                logger.info("Account service database initialized")
+            except Exception as e:
+                logger.warning(f"Database initialization failed: {e}, using in-memory fallback")
+                self._initialized = False
+
+    async def _get_session(self) -> AsyncSession:
+        """Get database session"""
+        if not self._initialized:
+            await self._ensure_initialized()
+        # This returns a context manager
+        return db_manager.get_session()
 
     async def create_account(
         self,
@@ -106,9 +99,40 @@ class AccountService:
         category: str = "general"
     ) -> Account:
         """Create a new account"""
-        import uuid
-        account = Account(
-            id=f"acc_{uuid.uuid4().hex[:8]}",
+        await self._ensure_initialized()
+
+        account_id_gen = f"acc_{uuid.uuid4().hex[:8]}"
+
+        if self._initialized:
+            try:
+                async with db_manager.get_session() as session:
+                    db_account = MonitoredAccount(
+                        id=account_id_gen,
+                        name=name,
+                        platform=platform,
+                        account_id=account_id,
+                        url=url,
+                        category=category,
+                        status="active"
+                    )
+                    session.add(db_account)
+                    await session.commit()
+                    logger.info(f"Created account in database: {name}")
+                    return Account(
+                        id=account_id_gen,
+                        name=name,
+                        platform=platform,
+                        account_id=account_id,
+                        url=url,
+                        category=category,
+                        status="active"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to create account in database: {e}")
+
+        # Fallback to in-memory
+        return Account(
+            id=account_id_gen,
             name=name,
             platform=platform,
             account_id=account_id,
@@ -116,13 +140,23 @@ class AccountService:
             category=category,
             status="active"
         )
-        self.accounts[account.id] = account
-        logger.info(f"Created account: {account.name} ({account.platform})")
-        return account
 
     async def get_account(self, account_id: str) -> Optional[Account]:
         """Get account by ID"""
-        return self.accounts.get(account_id)
+        await self._ensure_initialized()
+
+        if self._initialized:
+            try:
+                async with db_manager.get_session() as session:
+                    stmt = select(MonitoredAccount).where(MonitoredAccount.id == account_id)
+                    result = await session.execute(stmt)
+                    db_account = result.scalar_one_or_none()
+                    if db_account:
+                        return Account.from_db_model(db_account)
+            except Exception as e:
+                logger.error(f"Failed to get account from database: {e}")
+
+        return None
 
     async def list_accounts(
         self,
@@ -131,16 +165,30 @@ class AccountService:
         status: Optional[str] = None
     ) -> List[Account]:
         """List accounts with filters"""
-        results = list(self.accounts.values())
+        await self._ensure_initialized()
 
-        if platform:
-            results = [a for a in results if a.platform == platform]
-        if category:
-            results = [a for a in results if a.category == category]
-        if status:
-            results = [a for a in results if a.status == status]
+        if self._initialized:
+            try:
+                async with db_manager.get_session() as session:
+                    stmt = select(MonitoredAccount)
+                    conditions = []
+                    if platform:
+                        conditions.append(MonitoredAccount.platform == platform)
+                    if category:
+                        conditions.append(MonitoredAccount.category == category)
+                    if status:
+                        conditions.append(MonitoredAccount.status == status)
 
-        return results
+                    if conditions:
+                        stmt = stmt.where(and_(*conditions))
+
+                    result = await session.execute(stmt)
+                    db_accounts = result.scalars().all()
+                    return [Account.from_db_model(a) for a in db_accounts]
+            except Exception as e:
+                logger.error(f"Failed to list accounts from database: {e}")
+
+        return []
 
     async def update_account(
         self,
@@ -150,32 +198,65 @@ class AccountService:
         status: Optional[str] = None
     ) -> Optional[Account]:
         """Update account"""
-        account = self.accounts.get(account_id)
-        if not account:
-            return None
+        await self._ensure_initialized()
 
-        if name:
-            account.name = name
-        if category:
-            account.category = category
-        if status:
-            account.status = status
+        if self._initialized:
+            try:
+                async with db_manager.get_session() as session:
+                    stmt = select(MonitoredAccount).where(MonitoredAccount.id == account_id)
+                    result = await session.execute(stmt)
+                    db_account = result.scalar_one_or_none()
+                    if db_account:
+                        if name:
+                            db_account.name = name
+                        if category:
+                            db_account.category = category
+                        if status:
+                            db_account.status = status
+                        db_account.updated_at = datetime.now()
+                        await session.commit()
+                        return Account.from_db_model(db_account)
+            except Exception as e:
+                logger.error(f"Failed to update account: {e}")
 
-        return account
+        return None
 
     async def delete_account(self, account_id: str) -> bool:
         """Delete account"""
-        if account_id in self.accounts:
-            del self.accounts[account_id]
-            return True
+        await self._ensure_initialized()
+
+        if self._initialized:
+            try:
+                async with db_manager.get_session() as session:
+                    stmt = select(MonitoredAccount).where(MonitoredAccount.id == account_id)
+                    result = await session.execute(stmt)
+                    db_account = result.scalar_one_or_none()
+                    if db_account:
+                        await session.delete(db_account)
+                        await session.commit()
+                        return True
+            except Exception as e:
+                logger.error(f"Failed to delete account: {e}")
+
         return False
 
     async def update_collection_time(self, account_id: str) -> bool:
         """Update last collection time"""
-        account = self.accounts.get(account_id)
-        if account:
-            account.last_collection_time = datetime.now()
-            return True
+        await self._ensure_initialized()
+
+        if self._initialized:
+            try:
+                async with db_manager.get_session() as session:
+                    stmt = select(MonitoredAccount).where(MonitoredAccount.id == account_id)
+                    result = await session.execute(stmt)
+                    db_account = result.scalar_one_or_none()
+                    if db_account:
+                        db_account.last_collection_time = datetime.now()
+                        await session.commit()
+                        return True
+            except Exception as e:
+                logger.error(f"Failed to update collection time: {e}")
+
         return False
 
     async def get_active_accounts(self, platform: Optional[str] = None) -> List[Account]:

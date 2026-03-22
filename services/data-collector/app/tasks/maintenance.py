@@ -1,9 +1,14 @@
 """
-Maintenance Tasks
+Maintenance Tasks - Using database
 """
+import asyncio
+
 from celery import shared_task
 from loguru import logger
 from datetime import datetime, timedelta
+from sqlalchemy import select, delete, and_
+
+from app.core.database import db_manager, CollectedVideo, CollectionTask
 
 
 @shared_task
@@ -36,24 +41,78 @@ def cleanup_old_data():
 
 
 def _cleanup_raw_data(days: int) -> int:
-    """清理原始数据"""
+    """清理原始采集数据"""
     logger.info(f"Cleaning raw data older than {days} days")
-    # 实际项目中执行数据库清理
-    return 100  # 模拟清理数量
+
+    try:
+        db_manager.init_db()
+        deleted_count = 0
+
+        async def _delete():
+            nonlocal deleted_count
+            async with db_manager.get_session() as session:
+                cutoff_time = datetime.now() - timedelta(days=days)
+
+                # 删除30天前且没有被标记为重要的视频
+                stmt = delete(CollectedVideo).where(
+                    and_(
+                        CollectedVideo.collected_at < cutoff_time,
+                        CollectedVideo.play_count < 1000  # 保留高播放量视频
+                    )
+                )
+                result = await session.execute(stmt)
+                deleted_count = result.rowcount
+                await session.commit()
+
+        asyncio.run(_delete())
+        logger.info(f"Deleted {deleted_count} old videos")
+        return deleted_count
+    except Exception as e:
+        logger.error(f"Failed to cleanup raw data: {e}")
+        return 0
 
 
 def _cleanup_cache(days: int) -> int:
     """清理缓存"""
     logger.info(f"Cleaning cache older than {days} days")
-    # 实际项目中清理Redis缓存
-    return 50
+
+    try:
+        # TODO: 清理Redis缓存
+        return 0
+    except Exception as e:
+        logger.error(f"Failed to cleanup cache: {e}")
+        return 0
 
 
 def _cleanup_failed_alerts(days: int) -> int:
     """清理失败的预警记录"""
     logger.info(f"Cleaning failed alerts older than {days} days")
-    # 实际项目中清理数据库
-    return 10
+
+    try:
+        db_manager.init_db()
+        deleted_count = 0
+
+        async def _delete():
+            nonlocal deleted_count
+            async with db_manager.get_session() as session:
+                cutoff_time = datetime.now() - timedelta(days=days)
+
+                # 删除30天前的失败任务记录
+                stmt = delete(CollectionTask).where(
+                    and_(
+                        CollectionTask.started_at < cutoff_time,
+                        CollectionTask.status == "failed"
+                    )
+                )
+                result = await session.execute(stmt)
+                deleted_count = result.rowcount
+                await session.commit()
+
+        asyncio.run(_delete())
+        return deleted_count
+    except Exception as e:
+        logger.error(f"Failed to cleanup alerts: {e}")
+        return 0
 
 
 @shared_task
@@ -79,17 +138,31 @@ def health_check():
 
 def _check_database() -> bool:
     """检查数据库连接"""
-    # 实际项目中检查数据库
-    return True
+    try:
+        db_manager.init_db()
+
+        async def _check():
+            async with db_manager.get_session() as session:
+                await session.execute(select(1))
+                return True
+
+        return asyncio.run(_check())
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return False
 
 
 def _check_redis() -> bool:
     """检查Redis连接"""
-    # 实际项目中检查Redis
-    return True
+    try:
+        # TODO: 检查Redis连接
+        return True
+    except Exception as e:
+        logger.error(f"Redis health check failed: {e}")
+        return False
 
 
 def _check_api_services() -> bool:
     """检查外部API服务"""
-    # 实际项目中检查各平台API
+    # TODO: 检查各平台API可用性
     return True

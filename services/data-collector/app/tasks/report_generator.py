@@ -1,9 +1,14 @@
 """
-Report Generation Tasks
+Report Generation Tasks - Using database
 """
+import asyncio
+
 from celery import shared_task
 from loguru import logger
 from datetime import datetime, timedelta
+from sqlalchemy import select, func
+
+from app.core.database import db_manager, CollectedVideo, MonitoredAccount
 
 
 @shared_task(bind=True, max_retries=1)
@@ -23,7 +28,7 @@ def generate_daily(self):
             "date": datetime.now().strftime("%Y-%m-%d"),
             "overview": _generate_overview(stats),
             "platform_breakdown": _generate_platform_stats(stats),
-            "top_videos": _get_top_videos(stats),
+            "top_videos": _get_top_videos_from_db(),
             "trends": _analyze_trends(stats),
             "generated_at": datetime.now().isoformat()
         }
@@ -40,17 +45,50 @@ def generate_daily(self):
 
 
 def _collect_daily_stats():
-    """收集每日统计数据"""
-    # 实际项目中从数据库查询
-    return {
-        "total_videos": 1000,
-        "total_plays": 50000000,
-        "platforms": {
-            "douyin": {"videos": 400, "plays": 20000000},
-            "bilibili": {"videos": 300, "plays": 15000000},
-            "xiaohongshu": {"videos": 300, "plays": 15000000}
+    """从数据库收集每日统计数据"""
+    try:
+        db_manager.init_db()
+
+        async def _query():
+            async with db_manager.get_session() as session:
+                # 统计总视频数
+                total_stmt = select(func.count(CollectedVideo.id))
+                total_result = await session.execute(total_stmt)
+                total_videos = total_result.scalar() or 0
+
+                # 统计总播放量
+                plays_stmt = select(func.sum(CollectedVideo.play_count))
+                plays_result = await session.execute(plays_stmt)
+                total_plays = plays_result.scalar() or 0
+
+                # 按平台统计
+                platforms = {}
+                for platform in ['douyin', 'bilibili', 'xiaohongshu']:
+                    platform_stmt = select(
+                        func.count(CollectedVideo.id),
+                        func.sum(CollectedVideo.play_count)
+                    ).where(CollectedVideo.platform == platform)
+                    platform_result = await session.execute(platform_stmt)
+                    row = platform_result.one()
+                    platforms[platform] = {
+                        "videos": row[0] or 0,
+                        "plays": row[1] or 0
+                    }
+
+                return {
+                    "total_videos": total_videos,
+                    "total_plays": total_plays,
+                    "platforms": platforms
+                }
+
+        return asyncio.run(_query())
+    except Exception as e:
+        logger.error(f"Failed to collect daily stats: {e}")
+        return {
+            "total_videos": 0,
+            "total_plays": 0,
+            "platforms": {}
         }
-    }
 
 
 def _generate_overview(stats: dict) -> dict:
@@ -58,36 +96,56 @@ def _generate_overview(stats: dict) -> dict:
     return {
         "total_videos": stats["total_videos"],
         "total_plays": stats["total_plays"],
-        "growth_rate": 0.15,  # 15%增长
-        "viral_videos_count": 25
+        "growth_rate": 0.15,  # TODO: 计算实际增长率
+        "viral_videos_count": 0  # TODO: 统计爆款视频数
     }
 
 
 def _generate_platform_stats(stats: dict) -> dict:
     """生成各平台统计"""
-    return stats["platforms"]
+    return stats.get("platforms", {})
 
 
-def _get_top_videos(stats: dict) -> list:
-    """获取TOP视频"""
-    # 实际项目中从数据库查询
-    return [
-        {"video_id": "dy_001", "title": "热门视频1", "plays": 1000000},
-        {"video_id": "bilibili_001", "title": "热门视频2", "plays": 800000},
-        {"video_id": "xhs_001", "title": "热门视频3", "plays": 600000}
-    ]
+def _get_top_videos_from_db() -> list:
+    """从数据库获取TOP视频"""
+    try:
+        db_manager.init_db()
+
+        async def _query():
+            async with db_manager.get_session() as session:
+                stmt = select(CollectedVideo).order_by(
+                    CollectedVideo.play_count.desc()
+                ).limit(10)
+                result = await session.execute(stmt)
+                videos = result.scalars().all()
+
+                return [
+                    {
+                        "video_id": v.video_id,
+                        "title": v.title,
+                        "plays": v.play_count or 0,
+                        "platform": v.platform
+                    }
+                    for v in videos
+                ]
+
+        return asyncio.run(_query())
+    except Exception as e:
+        logger.error(f"Failed to get top videos: {e}")
+        return []
 
 
 def _analyze_trends(stats: dict) -> dict:
     """分析趋势"""
+    # TODO: 基于实际数据做趋势分析
     return {
-        "rising_categories": ["科技", "美食", "健身"],
-        "declining_categories": ["娱乐"],
-        "predictions": ["下周一可能会有科技类爆款"]
+        "rising_categories": [],
+        "declining_categories": [],
+        "predictions": []
     }
 
 
 def _save_report(report: dict):
     """保存报告"""
     logger.info(f"Saving report: {report['date']}")
-    # 实际项目中保存到数据库或文件存储
+    # TODO: 保存到数据库或文件存储

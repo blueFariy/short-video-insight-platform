@@ -21,6 +21,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '素材库' }
   },
   {
+    path: '/collector',
+    name: 'Collector',
+    component: () => import('@/views/collector/Collector.vue'),
+    meta: { title: '数据采集' }
+  },
+  {
     path: '/monitor',
     name: 'Monitor',
     component: () => import('@/views/monitor/Monitor.vue'),

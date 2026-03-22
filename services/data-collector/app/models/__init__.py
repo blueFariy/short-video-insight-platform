@@ -43,6 +43,7 @@ class VideoMetrics:
         self.engagement_rate = (self.like_count + self.comment_count + self.share_count) / max_play
 
         # B站特有指标
+        self.coin_ratio = (self.coin_count) / max_play
         if self.play_count > 0 and self.danmaku_count > 0:
             self.danmaku_density = self.danmaku_count / 60  # 假设平均1分钟
 
@@ -77,6 +78,7 @@ class Video:
 
     # Platform-specific fields
     bvid: Optional[str] = None  # B站
+    description: Optional[str] = None # B站
     note_id: Optional[str] = None  # 小红书
 
     # Viral detection

@@ -1,4 +1,6 @@
 # Short Video Insight Platform - Docker Compose
+# docker compose -f deploy/docker/docker-compose.yml build data-collector
+# docker compose -f deploy/docker/docker-compose.yml up -d data-collector
 version: '3.8'
 
 services:

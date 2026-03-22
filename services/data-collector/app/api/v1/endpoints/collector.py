@@ -180,7 +180,7 @@ async def list_videos(
     elif platform:
         videos = await collector_service.get_videos_by_platform(platform)
     else:
-        videos = list(collector_service.collected_videos.values())
+        videos = await collector_service.get_all_videos(limit)
 
     videos = videos[:limit]
     return success_response(data={

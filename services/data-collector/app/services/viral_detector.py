@@ -1,444 +1,400 @@
 """
 Viral Detection Service - Multi-dimensional viral video detection
+
+爆款检测核心逻辑：
+1. UP主维度：粉丝数、视频数、平均播放量
+2. 视频维度：播放量、点赞率、投币率、发布时间、时长
+3. 绝对爆款：跨平台绝对播放量阈值
 """
+
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-import numpy as np
 from loguru import logger
 
-from app.models import Video, VideoMetrics, VideoMetricHistory, ViralSignal
-from app.core.config import settings
+from app.models import Video, VideoMetrics, VideoMetricHistory, ViralSignal, Creator
 
 
-class GrowthCurveAnalyzer:
-    """增长曲线分析 - 识别爆发拐点"""
+# ============== 各平台爆款阈值配置 ==============
+thresholds = {
+    "bilibili": {
+        # 绝对爆款播放量阈值
+        "absolutely_viral_play_count": 500000,  # 50万播放以上为绝对爆款
+        
+        # UP主维度阈值
+        "small_up_followers": 10000,       # 小UP主粉丝数上限
+        "medium_up_followers": 100000,      # 中UP主粉丝数上限
+        
+        # 互动率阈值（小UP标准更宽松）
+        "small_up_like_ratio": 0.05,       # 小UP主点赞率 > 5%
+        "medium_up_like_ratio": 0.03,      # 中UP主点赞率 > 3%
+        "big_up_like_ratio": 0.02,         # 大UP主点赞率 > 2%
+        
+        # 投币率阈值
+        "coin_ratio_threshold": 0.005,     # 投币率 > 0.5%
+        
+        # 时长阈值（秒）
+        "short_video_max": 180,            # 3分钟以内为短视频
+        "medium_video_max": 600,           # 10分钟以内为中视频
+        
+        # 发布时间（小时）- 24小时内为新视频
+        "new_video_hours": 24,
+    },
+    "douyin": {
+        "absolutely_viral_play_count": 1000000,  # 100万播放
+        "small_up_followers": 100000,
+        "medium_up_followers": 1000000,
+        "small_up_like_ratio": 0.08,
+        "medium_up_like_ratio": 0.05,
+        "big_up_like_ratio": 0.03,
+        "new_video_hours": 12,
+    },
+    "xiaohongshu": {
+        "absolutely_viral_play_count": 100000,   # 10万播放
+        "small_up_followers": 5000,
+        "medium_up_followers": 50000,
+        "small_up_like_ratio": 0.10,
+        "medium_up_like_ratio": 0.05,
+        "big_up_like_ratio": 0.03,
+        "new_video_hours": 24,
+    }
+}
 
+
+class CreatorAnalyzer:
+    """UP主维度分析"""
+    
     def __init__(self):
-        self.min_history_points = 3
-
-    async def analyze(
-        self,
-        video_id: str,
-        history: List[VideoMetrics]
+        pass
+    
+    def analyze(
+        self, 
+        creator: Creator, 
+        current_video_metrics: VideoMetrics
     ) -> Dict[str, Any]:
         """
-        分析增长曲线
-
+        分析UP主维度
+        
         Returns:
-            Dict with score, stage, message
+            Dict with up_level, is_outstanding, factors
         """
-        if len(history) < self.min_history_points:
-            return {
-                "score": 0.0,
-                "stage": "unknown",
-                "message": "数据点不足，无法分析"
-            }
-
-        # 提取时间序列
-        timestamps = [h.timestamp for h in history]
-        play_counts = [h.play_count for h in history]
-
-        # 计算增长率
-        growth_rates = []
-        for i in range(1, len(play_counts)):
-            if play_counts[i-1] > 0:
-                rate = (play_counts[i] - play_counts[i-1]) / play_counts[i-1]
-                growth_rates.append(rate)
-            else:
-                growth_rates.append(0.0)
-
-        if not growth_rates:
-            return {
-                "score": 0.0,
-                "stage": "unknown",
-                "message": "无法计算增长率"
-            }
-
-        # 判断增长阶段
-        recent_growth = growth_rates[-1] if growth_rates else 0.0
-        avg_growth = sum(growth_rates) / len(growth_rates) if growth_rates else 0.0
-
-        # 爆发特征：增长率突然大幅提升
-        if recent_growth > avg_growth * 3 and recent_growth > 0.5:
-            return {
-                "score": recent_growth,
-                "stage": "takeoff",
-                "message": f"播放量突然爆发，最近增长率{recent_growth:.1%}",
-                "is_viral": True
-            }
-
-        # 平稳期
-        if recent_growth < 0.05 and avg_growth < 0.1:
-            return {
-                "score": recent_growth,
-                "stage": "plateau",
-                "message": "增长趋于平稳",
-                "is_viral": False
-            }
-
-        # 早期特征：虽然基数小但增长稳定
-        if avg_growth > 0.2 and max(play_counts) < 10000:
-            return {
-                "score": avg_growth,
-                "stage": "embryo",
-                "message": "早期潜力视频，增速稳定",
-                "is_viral": True
-            }
-
-        # 正常增长
+        platform = creator.platform
+        conf = thresholds.get(platform, thresholds["bilibili"])
+        
+        follower_count = creator.follower_count
+        video_count = creator.video_count
+        avg_play = creator.avg_play_count
+        
+        # 判断UP主层级
+        if follower_count < conf.get("small_up_followers", 10000):
+            up_level = "small"  # 小UP主
+        elif follower_count < conf.get("medium_up_followers", 100000):
+            up_level = "medium"  # 中UP主
+        else:
+            up_level = "big"  # 大UP主
+        
+        factors = []
+        is_outstanding = False
+        
+        # 分析维度1：该视频播放量是否远超UP主平均水平
+        if avg_play > 0 and current_video_metrics.play_count > avg_play * 3:
+            factors.append(f"播放量是UP主平均的{current_video_metrics.play_count/avg_play:.1f}倍")
+            is_outstanding = True
+        
+        # 分析维度2：该视频互动是否远超UP主日常
+        current_engagement = current_video_metrics.engagement_rate
+        if current_engagement > 0.15:  # 15%以上互动率为优秀
+            factors.append(f"超高互动率{current_engagement:.1%}")
+            is_outstanding = True
+        
+        # 分析维度3：小UP主的爆款更值得关注
+        if up_level == "small" and current_video_metrics.play_count > 10000:
+            factors.append(f"小UP主({follower_count}粉丝)达成{current_video_metrics.play_count}播放")
+            is_outstanding = True
+        
         return {
-            "score": recent_growth,
-            "stage": "normal",
-            "message": "增长正常",
-            "is_viral": False
+            "up_level": up_level,
+            "follower_count": follower_count,
+            "video_count": video_count,
+            "avg_play_count": avg_play,
+            "is_outstanding": is_outstanding,
+            "factors": factors
+        }
+
+
+class VideoContentAnalyzer:
+    """视频内容维度分析"""
+    
+    def __init__(self):
+        pass
+    
+    def analyze(
+        self, 
+        video: Video,
+        creator: Creator = None
+    ) -> Dict[str, Any]:
+        """
+        分析视频内容维度
+        
+        Returns:
+            Dict with content_score, factors, is_viral
+        """
+        platform = video.platform
+        conf = thresholds.get(platform, thresholds["bilibili"])
+        metrics = video.metrics
+        
+        factors = []
+        score = 0.0
+        is_viral = False
+        
+        # 维度1：绝对爆款（播放量超过阈值）
+        if metrics.play_count >= conf.get("absolutely_viral_play_count", 500000):
+            factors.append(f"绝对爆款：{metrics.play_count//10000}万播放")
+            score += 50
+            is_viral = True
+        
+        # 维度2：点赞率（根据UP主层级不同标准）
+        like_ratio = metrics.like_ratio
+        if creator:
+            up_level = "small" if creator.follower_count < conf.get("small_up_followers", 10000) \
+                       else "medium" if creator.follower_count < conf.get("medium_up_followers", 100000) \
+                       else "big"
+            threshold_key = f"{up_level}_up_like_ratio"
+            like_threshold = conf.get(threshold_key, 0.03)
+        else:
+            like_threshold = conf.get("small_up_like_ratio", 0.05)
+        
+        if like_ratio >= like_threshold:
+            factors.append(f"高点赞率{like_ratio:.1%}")
+            score += 20 * (like_ratio / like_threshold)  # 越高分越高
+            is_viral = True
+        
+        # 维度3：投币率（B站特有）
+        if platform == "bilibili":
+            coin_ratio = metrics.coin_ratio
+            if coin_ratio >= conf.get("coin_ratio_threshold", 0.005):
+                factors.append(f"高投币率{coin_ratio:.1%}")
+                score += 15 * (coin_ratio / conf.get("coin_ratio_threshold", 0.005))
+                is_viral = True
+            
+            # 弹幕密度（B站特有）
+            if metrics.danmaku_count > 0 and video.duration > 0:
+                danmaku_per_min = metrics.danmaku_count / (video.duration / 60)
+                if danmaku_per_min > 50:  # 每分钟超过50条弹幕
+                    factors.append(f"高弹幕密度{danmaku_per_min} 条/分钟")
+                    score += 10
+        
+        # 维度4：发布时间（24小时内为新视频，72小时内为热视频）
+        if video.publish_time:
+            hours_ago = (datetime.now() - video.publish_time).total_seconds() / 3600
+            if hours_ago < conf.get("new_video_hours", 24):
+                factors.append(f"新发布视频({hours_ago:.0f}小时前)")
+                score += 10
+            elif hours_ago < 72:
+                factors.append(f"热榜视频({hours_ago:.0f}小时前)")
+                score += 5
+                
+            # 播放量/发布时间 = 时速（判断增长趋势）
+            if hours_ago > 0 and hours_ago < 24:
+                play_per_hour = metrics.play_count / hours_ago
+                if play_per_hour > 10000:  # 每小时1万播放
+                    factors.append(f"高速增长{play_per_hour:.0f}播放/小时")
+                    score += 20
+                    is_viral = True
+        
+        # 维度5：时长分析
+        duration = video.duration
+        if duration > 0:
+            if duration < conf.get("short_video_max", 180):
+                factors.append(f"短视频{duration//60}分钟")
+            elif duration < conf.get("medium_video_max", 600):
+                factors.append(f"中视频{duration//60}分钟")
+            else:
+                factors.append(f"长视频{duration//60}分钟")
+        
+        # 维度6：互动综合分
+        total_engagement = (
+            metrics.like_count + 
+            metrics.comment_count * 2 +  # 评论权重更高
+            metrics.share_count * 3 +   # 分享权重最高
+            metrics.favorite_count * 2
+        )
+        if metrics.play_count > 0:
+            engagement_score = total_engagement / metrics.play_count
+            if engagement_score > 0.2:
+                factors.append(f"高综合互动{engagement_score:.1%}")
+                score += 15
+        
+        return {
+            "score": score,
+            "factors": factors,
+            "is_viral": is_viral,
+            "is_absolutely_viral": metrics.play_count >= conf.get("absolutely_viral_play_count", 500000)
         }
 
 
 class AuthenticityChecker:
-    """数据真实性检查 - 去噪算法"""
-
+    """数据真实性检查"""
+    
     def __init__(self):
-        self.threshold = settings.VIRAL_AUTHENTICITY_THRESHOLD
-
-    def check(self, video: Video, history: List[VideoMetrics] = None) -> float:
+        pass
+    
+    def check(self, video: Video) -> float:
         """
         检查数据真实性
-
+        
         Returns:
             真实性分数 0-1
         """
         score = 1.0
         metrics = video.metrics
-
-        # 1. 检查点赞/播放比是否异常
-        like_play_ratio = metrics.like_ratio
-        if like_play_ratio > 0.2:  # 点赞超过20%？太假了
-            logger.warning(f"Video {video.video_id}: Suspicious like ratio {like_play_ratio:.2%}")
-            score *= 0.5
-        elif like_play_ratio < 0.001:  # 异常低
-            score *= 0.8
-
-        # 2. 检查评论/点赞比
-        comment_like_ratio = metrics.comment_count / max(metrics.like_count, 1)
-        if comment_like_ratio > 0.5:  # 评论是点赞的一半？也可能是真爆款
-            # 需要更严格的检查
-            if comment_like_ratio > 0.8:
+        
+        # 基础比例检查
+        # 点赞/播放比（不同平台不同标准）
+        if video.platform == "bilibili":
+            # B站高质量视频10%+点赞率是正常的
+            if metrics.like_ratio > 0.5:
+                score *= 0.3
+            elif metrics.like_ratio > 0.35:
                 score *= 0.7
-
-        # 3. 检查时间分布（如果有历史数据）
-        if history and len(history) >= 2:
-            # 正常爆款应该是逐渐增长
-            latest = history[-1].play_count
-            previous = history[-2].play_count
-
-            if previous > 0:
-                sudden_jump = latest > previous * 5
-
-                # 如果没有外部导流理由，可能是刷量
-                if sudden_jump and not video.viral_factors.get('external_drive'):
-                    logger.warning(f"Video {video.video_id}: Sudden jump detected, possible fake")
-                    score *= 0.7
-
-        # 4. 平台特异性检查
-        if video.platform == 'bilibili':
-            # B站：硬币率异常检查
-            if metrics.coin_ratio > 0.2:  # 投币率超过20%太假
-                score *= 0.6
-
-        elif video.platform == 'xiaohongshu':
-            # 小红书：收藏/点赞比检查
-            if metrics.collect_ratio > 1.0:  # 收藏超过点赞太假
-                score *= 0.5
-
+        else:
+            if metrics.like_ratio > 0.3:
+                score *= 0.3
+            elif metrics.like_ratio > 0.2:
+                score *= 0.7
+        
+        # 投币/点赞比（B站特有）
+        if video.platform == "bilibili" and metrics.like_count > 0:
+            coin_like_ratio = metrics.coin_count / metrics.like_count
+            # 真实粉丝会有一定投币比例，0.05-0.3为正常范围
+            if 0.05 <= coin_like_ratio <= 0.5:
+                score = min(1.0, score * 1.2)  # 提升真实性
+        
+        # 评论/播放比
+        if metrics.play_count > 0:
+            comment_ratio = metrics.comment_count / metrics.play_count
+            # 1%-10%为正常评论率
+            if comment_ratio < 0.001:  # 几乎无评论
+                score *= 0.8
+            elif comment_ratio > 0.2:  # 评论异常高
+                score *= 0.7
+        
         return max(0.1, min(1.0, score))
 
 
-class SentimentAnalyzer:
-    """评论区情感分析"""
-
-    def __init__(self):
-        # 简化的情感分析（实际项目中可使用更复杂的模型）
-        self.positive_keywords = [
-            '太棒了', '喜欢', '优秀', '赞', '厉害', '支持', '爱了',
-            '实用', '有用', '干货', '学到了', '感谢', '感动'
-        ]
-        self.negative_keywords = [
-            '失望', '垃圾', '差', '坑', '骗', '无语', '后悔',
-            '不好', '一般', '没用', '浪费', '吐槽'
-        ]
-
-    async def analyze(self, comments: List[str]) -> Dict[str, Any]:
-        """
-        分析评论情感
-
-        Returns:
-            Dict with sentiment analysis results
-        """
-        if not comments:
-            return {
-                "positive_count": 0,
-                "neutral_count": 0,
-                "negative_count": 0,
-                "sentiment_ratio": {"positive": 0.0, "neutral": 1.0, "negative": 0.0},
-                "sentiment_shift": 0.0,
-                "top_keywords": []
-            }
-
-        positive_count = 0
-        negative_count = 0
-
-        for comment in comments:
-            comment_lower = comment.lower()
-            if any(kw in comment_lower for kw in self.positive_keywords):
-                positive_count += 1
-            elif any(kw in comment_lower for kw in self.negative_keywords):
-                negative_count += 1
-
-        total = len(comments)
-        neutral_count = total - positive_count - negative_count
-
-        positive_ratio = positive_count / total
-        negative_ratio = negative_count / total
-        neutral_ratio = neutral_count / total
-
-        # 计算情感偏移（正面 - 负面）
-        sentiment_shift = positive_ratio - negative_ratio
-
-        return {
-            "positive_count": positive_count,
-            "neutral_count": neutral_count,
-            "negative_count": negative_count,
-            "sentiment_ratio": {
-                "positive": positive_ratio,
-                "neutral": neutral_ratio,
-                "negative": negative_ratio
-            },
-            "sentiment_shift": sentiment_shift,
-            "overall_sentiment": "positive" if sentiment_shift > 0.2 else "negative" if sentiment_shift < -0.2 else "neutral"
-        }
-
-
-class CrossPlatformTracker:
-    """跨平台扩散追踪"""
-
-    def __init__(self):
-        self.platform_keywords = {
-            'douyin': ['抖音', 'douyin', 'TikTok'],
-            'bilibili': ['B站', 'bilibili', 'b站'],
-            'xiaohongshu': ['小红书', 'xhs', 'RED']
-        }
-
-    async def track(self, video: Video) -> Dict[str, Any]:
-        """
-        追踪跨平台扩散
-
-        Returns:
-            Dict with cross-platform spread info
-        """
-        # 简化的跨平台追踪
-        # 实际需要查询其他平台是否有相同内容
-
-        spread_info = {
-            "has_cross_platform": False,
-            "source_platform": video.platform,
-            "spreading_to": [],
-            "confidence": 0.0
-        }
-
-        # 检查视频标题/内容是否包含其他平台关键词
-        # 这是一个简化的实现
-        title_lower = video.title.lower()
-
-        for platform, keywords in self.platform_keywords.items():
-            if platform != video.platform:
-                if any(kw in title_lower for kw in keywords):
-                    spread_info["spreading_to"].append(platform)
-                    spread_info["has_cross_platform"] = True
-
-        if spread_info["has_cross_platform"]:
-            spread_info["confidence"] = 0.5  # 降低置信度，因为只是关键词匹配
-
-        return spread_info
-
-
-class BenchmarkComparator:
-    """历史对比 - 与同类视频对比"""
-
-    def __init__(self):
-        pass
-
-    async def compare(
-        self,
-        video: Video,
-        benchmark_data: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        与基准对比
-
-        Args:
-            video: 待对比视频
-            benchmark_data: 基准数据（同类视频平均数据）
-
-        Returns:
-            Dict with comparison results
-        """
-        metrics = video.metrics
-
-        if not benchmark_data:
-            # 使用简单的阈值作为基准
-            benchmark_data = {
-                "avg_engagement_rate": 0.05,
-                "avg_play_count": 10000,
-                "avg_like_ratio": 0.05
-            }
-
-        vs_engagement = metrics.engagement_rate / max(benchmark_data.get("avg_engagement_rate", 0.05), 0.001)
-        vs_likes = metrics.like_ratio / max(benchmark_data.get("avg_like_ratio", 0.05), 0.001)
-
-        return {
-            "vs_engagement_benchmark": vs_engagement,
-            "vs_like_benchmark": vs_likes,
-            "is_above_average": vs_engagement > 1.0 or vs_likes > 1.0,
-            "outstanding_factors": self._get_outstanding_factors(video, benchmark_data)
-        }
-
-    def _get_outstanding_factors(
-        self,
-        video: Video,
-        benchmark: Dict[str, Any]
-    ) -> List[str]:
-        """获取突出因素"""
-        factors = []
-        metrics = video.metrics
-
-        if metrics.engagement_rate > benchmark.get("avg_engagement_rate", 0.05) * 2:
-            factors.append("高互动率")
-
-        if metrics.like_ratio > benchmark.get("avg_like_ratio", 0.05) * 2:
-            factors.append("高点赞率")
-
-        if video.viral_factors.get('high_sharing'):
-            factors.append("高分享率")
-
-        if video.platform == 'bilibili' and metrics.coin_ratio > 0.05:
-            factors.append("高投币率")
-
-        if video.platform == 'xiaohongshu' and metrics.collect_ratio > 0.5:
-            factors.append("高收藏率")
-
-        return factors
-
-
 class ViralDetector:
-    """爆款识别器 - 多维度判断视频是否处于爆发期"""
-
+    """爆款识别器 - 多维度判断"""
+    
     def __init__(self):
-        self.growth_analyzer = GrowthCurveAnalyzer()
+        self.creator_analyzer = CreatorAnalyzer()
+        self.content_analyzer = VideoContentAnalyzer()
         self.authenticity_checker = AuthenticityChecker()
-        self.sentiment_analyzer = SentimentAnalyzer()
-        self.cross_platform_tracker = CrossPlatformTracker()
-        self.benchmark_comparator = BenchmarkComparator()
-
-        # 阈值配置
-        self.growth_threshold = settings.VIRAL_GROWTH_THRESHOLD
-        self.engagement_threshold = settings.VIRAL_ENGAGEMENT_THRESHOLD
-
+    
     async def detect(
         self,
         video: Video,
-        history: List[VideoMetrics] = None,
-        comments: List[str] = None
+        creator: Creator = None,
+        history: List[VideoMetrics] = None
     ) -> ViralSignal:
         """
-        检测爆款信号
-
+        多维度爆款检测
+        
         Args:
-            video: 待检测视频
-            history: 历史指标数据
-            comments: 视频评论列表
-
+            video: 视频数据
+            creator: UP主信息（可选，提供则分析更准确）
+            history: 历史指标数据（可选）
+        
         Returns:
             ViralSignal对象
         """
-        logger.info(f"Detecting viral signals for video: {video.video_id}")
-
+        logger.info(f"Detecting viral for video: {video.video_id}")
+        
         signals = ViralSignal(video_id=video.video_id)
-
-        # 1. 增长曲线分析
-        if history and len(history) >= 3:
-            growth_result = await self.growth_analyzer.analyze(video.video_id, history)
-            signals.growth_score = growth_result.get("score", 0.0)
-            signals.growth_stage = growth_result.get("stage", "unknown")
-            signals.message = growth_result.get("message", "")
+        
+        # 1. UP主维度分析
+        creator_analysis = None
+        if creator:
+            creator_analysis = self.creator_analyzer.analyze(creator, video.metrics)
+            logger.info(f"Creator analysis: {creator_analysis}")
+        
+        # 2. 视频内容维度分析
+        content_analysis = self.content_analyzer.analyze(video, creator)
+        signals.growth_score = content_analysis.get("score", 0.0)
+        
+        # 3. 数据真实性检查
+        authenticity = self.authenticity_checker.check(video)
+        signals.authenticity = authenticity
+        
+        # 4. 判断爆款阶段
+        is_absolutely_viral = content_analysis.get("is_absolutely_viral", False)
+        is_content_viral = content_analysis.get("is_viral", False)
+        
+        if is_absolutely_viral:
+            signals.growth_stage = "explosion"
+            signals.message = f"绝对爆款！播放量{video.metrics.play_count//10000}万"
+        elif is_content_viral:
+            signals.growth_stage = "takeoff"
+            signals.message = "多维度爆款特征"
+        elif creator_analysis and creator_analysis.get("is_outstanding"):
+            signals.growth_stage = "takeoff"
+            signals.message = f"UP主维度爆款: {', '.join(creator_analysis.get('factors', []))}"
         else:
-            # 没有历史数据时，使用当前指标估算
-            signals.growth_score = video.metrics.engagement_rate
-            if video.metrics.engagement_rate > self.engagement_threshold * 2:
-                signals.growth_stage = "takeoff"
-                signals.message = "高互动率，可能处于爆发期"
-            else:
-                signals.growth_stage = "unknown"
-                signals.message = "数据不足，无法准确判断"
-
-        # 2. 互动异常检测（数据真实性）
-        authenticity_score = self.authenticity_checker.check(video, history)
-        signals.authenticity = authenticity_score
-
-        # 3. 评论区情绪分析
-        if comments:
-            sentiment_result = await self.sentiment_analyzer.analyze(comments)
-            signals.sentiment_shift = sentiment_result.get("sentiment_shift", 0.0)
-
-        # 4. 跨平台扩散追踪
-        cross_platform = await self.cross_platform_tracker.track(video)
-        signals.cross_platform_spread = cross_platform
-
-        # 5. 历史对比
-        benchmark = await self.benchmark_comparator.compare(video)
-        signals.vs_benchmark = benchmark
-
-        # 综合判断是否预警
-        should_alert, alert_level = self._decide_alert(signals)
+            signals.growth_stage = "normal"
+            signals.message = "未达到爆款标准"
+        
+        # 添加分析因素
+        all_factors = content_analysis.get("factors", [])
+        if creator_analysis:
+            all_factors.extend(creator_analysis.get("factors", []))
+        
+        signals.vs_benchmark = {
+            "factors": all_factors,
+            "content_score": content_analysis.get("score", 0),
+            "creator_analysis": creator_analysis
+        }
+        
+        # 5. 决定预警级别
+        should_alert, alert_level = self._decide_alert(
+            signals, 
+            is_absolutely_viral,
+            is_content_viral,
+            authenticity
+        )
         signals.should_alert = should_alert
         signals.alert_level = alert_level
-
+        
         logger.info(
-            f"Viral detection result for {video.video_id}: "
-            f"stage={signals.growth_stage}, alert={signals.should_alert}, level={signals.alert_level}"
+            f"Viral result: {video.video_id}, "
+            f"stage={signals.growth_stage}, alert={should_alert}, level={alert_level}"
         )
-
+        
         return signals
-
-    def _decide_alert(self, signals: ViralSignal) -> tuple[bool, str]:
+    
+    def _decide_alert(
+        self, 
+        signals: ViralSignal,
+        is_absolutely_viral: bool,
+        is_content_viral: bool,
+        authenticity: float
+    ) -> tuple[bool, str]:
         """
-        决定是否推送预警
-
-        Returns:
-            (should_alert, alert_level)
+        决定预警级别
         """
-        # 预警条件检查
-        is_takeoff = signals.growth_stage in ['takeoff', 'embryo']
-        is_authentic = signals.authenticity > self.authenticity_checker.threshold
-        is_sentiment_positive = signals.sentiment_shift > -0.2
-
-        # 红色预警：多个爆款特征同时出现
-        if (is_takeoff and is_authentic and
-            signals.growth_score > 0.5 and
-            (signals.vs_benchmark.get('is_above_average', False) or
-             signals.cross_platform_spread.get('has_cross_platform', False))):
+        # 数据不真实，不预警
+        if authenticity < 0.3:
+            return False, "none"
+        
+        # 绝对爆款 - 红色预警
+        if is_absolutely_viral and authenticity > 0.5:
             return True, "red"
-
-        # 橙色预警：增长期 + 真实数据
-        if is_takeoff and is_authentic and is_sentiment_positive:
+        
+        # 多维度爆款 - 橙色预警
+        if is_content_viral and authenticity > 0.5:
             return True, "orange"
-
-        # 黄色预警：较高互动 + 真实数据
-        if (signals.growth_score > self.engagement_threshold and
-            is_authentic and
-            signals.vs_benchmark.get('is_above_average', False)):
+        
+        # 较高分数 - 黄色预警
+        if signals.growth_score > 30 and authenticity > 0.5:
             return True, "yellow"
-
-        # 无预警
+        
         return False, "none"
 
 

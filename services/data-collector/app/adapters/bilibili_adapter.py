@@ -1,481 +1,295 @@
 """
-Bilibili Data Adapter
+B站(Bilibili)平台数据适配器
 """
-import asyncio
-import hashlib
-import time
-from typing import List, Optional, Dict, Any
+
+import os
+from typing import Optional, Dict, Any, List
 from datetime import datetime
-from loguru import logger
-import aiohttp
 
-from app.adapters.base import PlatformAdapter
+from app.adapters.api.bilibili_api import BilibiliAPI
 from app.models import Video, Creator, VideoMetrics
-from app.core.config import settings
-
-
-class BilibiliOpenAPI:
-    """Bilibili Official API - 使用公开API无需认证"""
-
-    def __init__(self, app_key: str = None, app_secret: str = None):
-        self.app_key = app_key or settings.BILI_APP_KEY
-        self.app_secret = app_secret or settings.BILI_APP_SECRET
-        self.base_url = "https://api.bilibili.com"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://www.bilibili.com",
-            "Accept": "application/json, text/plain, */*"
-        }
-
-    async def _get(self, url: str, params: Dict = None) -> Dict:
-        """发送GET请求"""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, headers=self.headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                data = await resp.json()
-                return data
-
-    async def get_ranking(self, rid: str = "0", day: int = 3, type: str = "all") -> List[Dict]:
-        """
-        获取B站分区排行榜
-        公开API: https://api.bilibili.com/x/web-interface/ranking/v2
-        """
-        logger.info(f"Fetching Bilibili ranking: rid={rid}, day={day}, type={type}")
-        url = f"{self.base_url}/x/web-interface/ranking/v2"
-        params = {
-            "rid": rid,
-            "type": type,
-        }
-        
-        try:
-            data = await self._get(url, params)
-            if data.get("code") == 0:
-                return data.get("data", {}).get("list", [])
-            else:
-                logger.error(f"Bilibili API error: {data.get('message')}")
-                return await self._get_ranking_fallback(rid)
-        except Exception as e:
-            logger.error(f"Failed to fetch Bilibili ranking: {e}")
-            return await self._get_ranking_fallback(rid)
-
-    async def _get_ranking_fallback(self, rid: str) -> List[Dict]:
-        """备用方案：从网页端获取排行榜"""
-        url = f"{self.base_url}/x/web-interface/popular"
-        params = {"pn": 1, "ps": 50}
-        
-        try:
-            data = await self._get(url, params)
-            if data.get("code") == 0:
-                return data.get("data", {}).get("list", [])
-        except:
-            pass
-        return []
-
-    async def get_video_stat(self, bvid: str) -> Dict:
-        """
-        获取视频详细统计数据
-        公开API: https://api.bilibili.com/x/web-interface/view?bvid=xxx
-        """
-        logger.info(f"Fetching Bilibili video stat: {bvid}")
-        url = f"{self.base_url}/x/web-interface/view"
-        params = {"bvid": bvid}
-        
-        try:
-            data = await self._get(url, params)
-            if data.get("code") == 0:
-                return data.get("data", {}).get("stat", {})
-        except Exception as e:
-            logger.error(f"Failed to fetch video stat: {e}")
-        
-        return {}
-
-    async def get_video_info(self, bvid: str) -> Dict:
-        """获取视频完整信息"""
-        url = f"{self.base_url}/x/web-interface/view"
-        params = {"bvid": bvid}
-        
-        try:
-            data = await self._get(url, params)
-            if data.get("code") == 0:
-                return data.get("data", {})
-        except Exception as e:
-            logger.error(f"Failed to fetch video info: {e}")
-        
-        return {}
-
-    async def get_user_info(self, mid: str) -> Dict:
-        """
-        获取用户信息
-        公开API: https://api.bilibili.com/x/space/acc/info?mid=xxx
-        """
-        logger.info(f"Fetching Bilibili user info: {mid}")
-        url = f"{self.base_url}/x/space/acc/info"
-        params = {"mid": mid}
-        
-        try:
-            data = await self._get(url, params)
-            if data.get("code") == 0:
-                return data.get("data", {})
-        except Exception as e:
-            logger.error(f"Failed to fetch user info: {e}")
-        
-        return {}
-
-    async def get_user_videos(self, mid: str, pn: int = 1, ps: int = 30) -> List[Dict]:
-        """
-        获取用户视频列表
-        公开API: https://api.bilibili.com/x/space/arc/search?mid=xxx
-        """
-        url = f"{self.base_url}/x/space/arc/search"
-        params = {"mid": mid, "pn": pn, "ps": ps, "order": "pubdate"}
-        
-        try:
-            data = await self._get(url, params)
-            if data.get("code") == 0:
-                return data.get("data", {}).get("list", {}).get("vlist", [])
-        except Exception as e:
-            logger.error(f"Failed to fetch user videos: {e}")
-        
-        return []
-
-
-class BilibiliSpider:
-    """B站网页端爬虫 - 备用方案"""
-
-    def __init__(self):
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://www.bilibili.com",
-        }
-        self.base_url = "https://www.bilibili.com"
-
-    async def _get(self, url: str, params: Dict = None) -> str:
-        """发送GET请求"""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, headers=self.headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                return await resp.text()
-
-    async def get_popular(self, partition: str = "douga") -> List[Dict]:
-        """获取热门视频 - 从网页端解析"""
-        # 使用API作为主要数据源，爬虫作为备用
-        logger.info(f"Fetching Bilibili popular from spider: {partition}")
-        # 实际实现会从网页HTML解析，这里返回空列表让API方案生效
-        return []
-
+from app.adapters.base import PlatformAdapter
 
 class BilibiliAdapter(PlatformAdapter):
-    """B站数据适配器"""
-
-    def __init__(self):
+    """
+    B站平台适配器
+    
+    负责将B站API数据转换为统一的Video和Creator格式
+    异步版本，支持WBI签名和Cookie认证
+    """
+    
+    PLATFORM_NAME = "bilibili"
+    
+    def __init__(self, cookie: str):
         super().__init__()
-        self.platform = "bilibili"
-
-        # B站开放程度较高，有完善的API
-        self.api = BilibiliOpenAPI(
-            app_key=settings.BILI_APP_KEY,
-            app_secret=settings.BILI_APP_SECRET
+        self.platform_name = self.PLATFORM_NAME
+        
+        self.api = BilibiliAPI(
+            timeout=30,
+            cookie_file=cookie
         )
-        self.spider = BilibiliSpider()
+    
+    async def close(self):
+        await self.api.close()
 
-    async def get_trending_videos(
-        self,
-        category: Optional[str] = None,
-        limit: int = 100
-    ) -> List[Video]:
-        """获取B站热门视频
-        
-        Args:
-            category: 分区名称，支持: douga, music, game, technology, life, food, beauty, knowledge 等
-                      也支持中文: 动画, 音乐, 游戏, 科技, 生活, 美食, 美妆, 知识 等
-            limit: 返回数量限制
+    async def get_region_videos(self, rid: int, pn: int = 1, ps: int = 14) -> List[Video]:
         """
-        logger.info(f"Fetching trending videos from Bilibili, category: {category}, limit: {limit}")
-
-        # 默认分区列表
-        default_partitions = ['douga', 'music', 'game', 'technology', 'life', 'food']
-        
-        # 根据category参数确定要获取的分区
-        if category:
-            # 将category转换为分区ID
-            partition_id = self._get_partition_id(category)
-            if partition_id != "0":
-                # 如果是有效的分区，直接获取该分区
-                partitions = [category]
-            else:
-                # 无效分区，使用默认分区
-                logger.warning(f"Unknown category: {category}, using default partitions")
-                partitions = default_partitions
-        else:
-            partitions = default_partitions
-
-        trending_videos = []
-
-        # 限制分区数量，避免请求过多
-        partitions = partitions[:3]
-
-        for partition in partitions:
-            try:
-                partition_id = self._get_partition_id(partition)
-                hot_list = await self.api.get_ranking(
-                    rid=partition_id,
-                    day=3,
-                    type='all'
-                )
-
-                if hot_list:
-                    # 根据limit动态调整每个分区获取的数量
-                    per_partition = max(1, limit // len(partitions))
-                    for item in hot_list[:per_partition]:
-                        video = await self._enrich_video_data(item)
-                        trending_videos.append(video)
-
-            except Exception as e:
-                logger.error(f"Failed to fetch {partition}: {e}")
-
-        # 如果所有API都失败，尝试备用数据源
-        if not trending_videos:
-            logger.warning("API failed, trying spider fallback")
-            try:
-                spider_data = await self.spider.get_popular()
-                for item in spider_data[:limit]:
-                    video = self._parse_bilibili_video(item)
-                    trending_videos.append(video)
-            except Exception as e:
-                logger.error(f"Spider fallback also failed: {e}")
-
-        logger.info(f"Fetched {len(trending_videos)} videos from Bilibili")
-        return trending_videos[:limit]
-
-    async def get_video_detail(self, video_id: str) -> Optional[Video]:
-        """获取视频详情"""
-        logger.info(f"Fetching video detail: {video_id}")
-
+        获取视频分区列表
+        """
         try:
-            # 从API获取完整视频信息
-            data = await self.api.get_video_info(video_id)
+            results = await self.api.get_region_videos(rid, pn, ps)
+            videos = []
+            for result in results['archives']:
+                videos.append(self._parse_video_data(result))
+            return videos
+        except Exception as e:
+            logger.warning(f"获取视频分区列表失败: {e}")
+            return []
+    
+    async def get_trending_videos(self, category: Optional[str] = None, limit: int = 100) -> List[Video]:
+        """
+        获取热门视频列表
+        
+        参数:
+            category: 分区名称 (如 "动画", "游戏" 等)
+            limit: 返回数量
+        """
+        videos = []
+        try:
+            # 根据category获取分区tid
+            rid = 0  # 默认全站
+            if category:
+                pass
             
-            if not data:
-                logger.warning(f"Video not found: {video_id}")
-                return None
+            # 调用排行榜API
+            data = await self.api.get_ranking(rid=rid)
+            
+            for item in data[:limit]:
+                videos.append(self._parse_video_data(item))
+                
+        except Exception as e:
+            logger.warning(f"获取热门视频失败: {e}")
+        
+        return videos
+    
+    async def search_videos(self, keyword: str, limit: int = 20) -> List[Video]:
+        """搜索视频"""
+        videos = []
+        try:
+            data = await self.api.search(
+                search_type="video",
+                keyword=keyword,
+                page_size=limit
+            )
+            
+            result_list = data.get("result", [])
+            for item in result_list:
+                # 搜索结果格式需要适配
+                item["owner"] = {
+                    "mid": item.get("mid"),
+                    "name": item.get("author", ""),
+                    "face": item.get("face", "")
+                }
+                videos.append(self._parse_video_data(item))
+                
+        except Exception as e:
+            logger.warning(f"搜索视频失败: {e}")
+        
+        return videos
+    
+    async def search_creators(self, keyword: str, limit: int = 20) -> List[Creator]:
+        """搜索创作者"""
+        creators = []
+        try:
+            data = await self.api.search(
+                search_type="bili_user",
+                keyword=keyword,
+                page_size=limit
+            )
+            
+            result_list = data.get("result", [])
+            for item in result_list:
+                # 转换为创作者格式
+                creators.append(Creator(
+                    platform=self.PLATFORM_NAME,
+                    creator_id=str(item.get("mid", "")),
+                    name=item.get("uname", ""),
+                    avatar_url=item.get("upic", ""),
+                    description=item.get("usign", ""),
+                    follower_count=item.get("fans", 0),
+                ))
+                
+        except Exception as e:
+            logger.warning(f"搜索创作者失败: {e}")
+        
+        return creators
 
-            return self._parse_bilibili_video(data)
+    async def get_creator_videos(self, creator_id: str, limit: int = 50) -> List[Video]:
+        """获取创作者的视频列表"""
+        videos = []
+        try:
+            mid = int(creator_id)
+            # 获取用户视频列表
+            data = await self.api.get_user_videos(mid=mid, ps=limit)
+            list_data = data.get("archives", [])
+
+            for item in list_data:
+                # 用户视频列表格式略有不同，需要适配
+                item["owner"] = item.get("author", {})
+                videos.append(self._parse_video_data(item))
 
         except Exception as e:
-            logger.error(f"Failed to get video detail: {e}")
-            return None
+            logger.warning(f"获取创作者视频列表失败: {e}")
 
-    async def get_creator_videos(
-        self,
-        creator_id: str,
-        limit: int = 50
-    ) -> List[Video]:
-        """获取创作者视频"""
-        logger.info(f"Fetching videos for creator: {creator_id}")
-        # 实现获取创作者视频列表
-        return []
+        return videos
+
+    async def get_video_detail(self, video_id: str) -> Optional[Video]:
+        """
+        获取单个视频信息
+
+        支持通过bvid或avid获取
+        """
+        try:
+            # 判断是bvid还是avid
+            if video_id.startswith("BV"):
+                data = await self.api.get_video_info(bvid=video_id)
+            elif video_id.startswith("AV") or video_id.isdigit():
+                aid = int(video_id.replace("AV", ""))
+                data = await self.api.get_video_info(aid=aid)
+            else:
+                # 尝试作为bvid处理
+                data = await self.api.get_video_info(bvid=video_id)
+
+            return self._parse_video_data(data)
+        except Exception as e:
+            logger.warning(f"获取视频信息失败: {e}")
+            return None
 
     async def get_creator_info(self, creator_id: str) -> Optional[Creator]:
         """获取创作者信息"""
-        logger.info(f"Fetching creator info: {creator_id}")
-
         try:
-            user_info = await self.api.get_user_info(creator_id)
-
-            if not user_info:
-                return None
-
-            return Creator(
-                creator_id=str(user_info.get('mid', '')),
-                platform='bilibili',
-                name=user_info.get('name', ''),
-                url=f"https://space.bilibili.com/{creator_id}",
-                avatar_url=user_info.get('face', ''),
-                follower_count=user_info.get('follower', 0),
-                video_count=user_info.get('count', {}).get('video', 0) if isinstance(user_info.get('count'), dict) else 0
-            )
-
+            mid = int(creator_id)
+            data = await self.api.get_user_info(mid)
+            data_stat = await self.api.get_user_archive(mid)
+            data = data | data_stat
+            return self._parse_creator_data(data)
         except Exception as e:
-            logger.error(f"Failed to get creator info: {e}")
+            logger.warning(f"获取创作者信息失败: {e}")
             return None
 
-    async def _enrich_video_data(self, base_data: Dict[str, Any]) -> Video:
-        """丰富视频数据（B站特有的指标）"""
-        bvid = base_data.get('bvid', '')
+    async def get_comments(self, video_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """获取视频评论"""
+        comments = []
+        try:
+            # 先获取视频aid
+            video = await self.get_video_detail(video_id)
+            if not video:
+                return comments
+            
+            data = await self.api.get_comments(oid=video.bvid, ps=limit)
+            replies = data.get("replies", [])
+            
+            for reply in replies:
+                comments.append({
+                    "rpid": reply.get("rpid"),
+                    "mid": reply.get("mid"),
+                    "uname": reply.get("member", {}).get("uname", ""),
+                    "content": reply.get("content").get("message", ""),
+                    "like": reply.get("like", 0),
+                    "ctime": reply.get("ctime"),
+                })
+                
+        except Exception as e:
+            logger.warning(f"获取评论失败: {e}")
         
-        # B站API返回的数据结构中，stat是独立的部分
-        stats = base_data.get('stat', {})
+        return comments
 
-        # 如果stat为空，尝试从base_data获取
-        if not stats:
-            stats = {
-                'view': base_data.get('view', 0),
-                'like': base_data.get('like', 0),
-                'coin': base_data.get('coin', 0),
-                'favorite': base_data.get('favorite', 0),
-                'share': base_data.get('share', 0),
-                'danmaku': base_data.get('danmaku', 0)
-            }
+    def _create_video_metrics(self, data: Dict[str, Any]) -> VideoMetrics:
+        """创建视频指标对象"""
+        stat = data.get("stat", {})
 
-        # B站核心爆款指标
-        view_count = stats.get('view', 0)
-        
-        # 解析时长
-        duration = 0
-        duration_str = base_data.get('duration', '0:00')
-        if isinstance(duration_str, int):
-            duration = duration_str
+        if isinstance(stat, dict):
+            view_count = stat.get("view", 0)
+            danmaku_count = stat.get("danmaku", 0)
+            reply_count = stat.get("reply", 0)
+            favorite_count = stat.get("favorite", 0)
+            coin_count = stat.get("coin", 0)
+            share_count = stat.get("share", 0)
+            like_count = stat.get("like", 0)
         else:
-            duration = self._parse_duration(duration_str)
+            view_count = danmaku_count = reply_count = 0
+            favorite_count = coin_count = share_count = like_count = 0
 
+        # 创建metrics对象
         metrics = VideoMetrics(
-            video_id=bvid,
-            platform='bilibili',
+            video_id=data.get("bvid", ""),
+            platform=self.PLATFORM_NAME,
             play_count=view_count,
-            like_count=stats.get('like', 0),
-            coin_count=stats.get('coin', 0),
-            favorite_count=stats.get('favorite', 0),
-            share_count=stats.get('share', 0),
-            danmaku_count=stats.get('danmaku', 0)
+            danmaku_count=danmaku_count,
+            comment_count=reply_count,
+            favorite_count=favorite_count,
+            coin_count=coin_count,
+            share_count=share_count,
+            like_count=like_count,
         )
         metrics.calculate_ratios()
 
-        # B站特有指标
-        if view_count > 0:
-            metrics.coin_ratio = stats.get('coin', 0) / view_count
-            metrics.danmaku_density = stats.get('danmaku', 0) / max(duration / 60, 1)
+        return metrics
 
-        owner = base_data.get('owner', {})
-        if not owner:
-            owner = base_data.get('author', {})
+    def _parse_video_data(self, data: Dict[str, Any]) -> Video:
+        """解析视频数据"""
+        owner = data.get("owner", {})
 
-        # B站爆款特征识别
-        viral_factors = self._detect_bilibili_viral_patterns(metrics)
-
-        video = Video(
-            video_id=bvid,
-            platform='bilibili',
-            title=base_data.get('title', ''),
-            url=f"https://www.bilibili.com/video/{bvid}/",
-            creator_id=str(owner.get('mid', '')) if isinstance(owner, dict) else str(owner),
-            creator_name=owner.get('name', '') if isinstance(owner, dict) else str(owner),
-            cover_url=base_data.get('pic', ''),
-            duration=duration,
-            metrics=metrics,
-            publish_time=datetime.fromtimestamp(base_data.get('pubdate', 0)) if base_data.get('pubdate') else None,
-            bvid=bvid,
-            viral_factors=viral_factors
-        )
-
-        return video
-
-    def _parse_bilibili_video(self, data: Dict[str, Any]) -> Video:
-        """解析B站视频数据"""
-        stats = data.get('stat', {})
-        
-        # 兼容不同数据结构
-        if not stats:
-            stats = {
-                'view': data.get('view', 0),
-                'like': data.get('like', 0),
-                'coin': data.get('coin', 0),
-                'favorite': data.get('favorite', 0),
-                'share': data.get('share', 0),
-                'danmaku': data.get('danmaku', 0)
-            }
-
-        view_count = stats.get('view', 0)
-        
-        # 解析时长
-        duration = 0
-        duration_str = data.get('duration', '0:00')
-        if isinstance(duration_str, int):
-            duration = duration_str
-        else:
-            duration = self._parse_duration(duration_str)
-
-        metrics = VideoMetrics(
-            video_id=data.get('bvid', ''),
-            platform='bilibili',
-            play_count=view_count,
-            like_count=stats.get('like', 0),
-            coin_count=stats.get('coin', 0),
-            favorite_count=stats.get('favorite', 0),
-            share_count=stats.get('share', 0),
-            danmaku_count=stats.get('danmaku', 0)
-        )
-        metrics.calculate_ratios()
-
-        owner = data.get('owner', {})
-        if not owner:
-            owner = data.get('author', {})
+        # 创建metrics
+        metrics = self._create_video_metrics(data)
 
         return Video(
-            video_id=data.get('bvid', ''),
-            platform='bilibili',
-            title=data.get('title', ''),
-            url=f"https://www.bilibili.com/video/{data.get('bvid', '')}/",
-            creator_id=str(owner.get('mid', '')) if isinstance(owner, dict) else str(owner),
-            creator_name=owner.get('name', '') if isinstance(owner, dict) else str(owner),
-            cover_url=data.get('pic', ''),
-            duration=duration,
+            platform=self.PLATFORM_NAME,
+            video_id=data.get("bvid", ""),
+            title=data.get("title", ""),
+            description=data.get("desc", ""),
+            url=f"https://www.bilibili.com/video/{data.get('bvid', '')}",
+            cover_url=data.get("pic", ""),
+            publish_time=datetime.fromtimestamp(data.get("pubdate", 0)) if data.get("pubdate") else None,
+            duration=data.get("duration", 0),
             metrics=metrics,
-            publish_time=datetime.fromtimestamp(data.get('pubdate', 0)) if data.get('pubdate') else None,
-            bvid=data.get('bvid', ''),
-            viral_factors=self._detect_bilibili_viral_patterns(metrics)
+            # B站特有字段
+            bvid=data.get("bvid", ""),
+            creator_id=str(owner.get("mid", "")),
+            creator_name=owner.get("name", ""),
         )
 
-    def _detect_bilibili_viral_patterns(self, metrics: VideoMetrics) -> Dict[str, Any]:
-        """B站爆款特征识别"""
-        patterns = {}
+    def _parse_creator_data(self, data: Dict[str, Any]) -> Creator:
+        """解析创作者数据"""
+        # 处理可能的字段差异
+        if "card" in data:
+            # 用户名片格式
+            card = data["card"]
+            user_data = {
+                "mid": int(card.get("mid", 0)),
+                "name": card.get("name", ""),
+                "face": card.get("face", ""),
+                "sign": card.get("sign", ""),
+                "fans": card.get("fans", 0),
+                "friend": card.get("friend", 0),
+            }
 
-        # B站爆款特征：
-        # 1. 发布24小时内，投币率 > 5%（说明内容高质量）
-        if metrics.coin_ratio > 0.05:
-            patterns['high_coin_ratio'] = True
-
-        # 2. 弹幕密度 > 100条/分钟（观众互动热烈）
-        if metrics.danmaku_density > 100:
-            patterns['high_danmaku_density'] = True
-
-        # 3. 收藏/播放比 > 10%（值得反复观看）
-        if metrics.favorite_count / max(metrics.play_count, 1) > 0.1:
-            patterns['high_favorite_ratio'] = True
-
-        # 4. 高互动率
-        if metrics.engagement_rate > 0.1:
-            patterns['high_engagement'] = True
-
-        return patterns
-
-    def _get_partition_id(self, partition: str) -> str:
-        """获取分区ID"""
-        partition_map = {
-            "douga": "1",
-            "guichu": "5",
-            "music": "3",
-            "dance": "29",
-            "game": "4",
-            "technology": "36",
-            "life": "160"
-        }
-        return partition_map.get(partition, "0")
-
-    def _parse_duration(self, duration_str: str) -> int:
-        """解析时长字符串为秒"""
-        try:
-            parts = duration_str.split(':')
-            if len(parts) == 2:
-                return int(parts[0]) * 60 + int(parts[1])
-            elif len(parts) == 3:
-                return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-        except:
-            pass
-        return 60
+            return Creator(
+                platform=self.PLATFORM_NAME,
+                creator_id=str(user_data.get("mid", "")),
+                name=user_data.get("name", ""),
+                url=f"https://space.bilibili.com/{user_data.get('mid', '')}",
+                avatar_url=user_data.get("face", ""),
+                description=user_data.get("sign", ""),
+                follower_count=data.get("follower", 0),
+                video_count=data.get("archive_count", 0),
+                avg_play_count=(data.get("archive").get("view") // data.get("archive_count", 0)) if data.get(
+                    "archive_count", 0) else 0,
+            )
+        return None
 
 
-# Singleton instance
-bilibili_adapter = BilibiliAdapter()
-
-
-def get_bilibili_adapter() -> BilibiliAdapter:
-    """Get Bilibili adapter instance"""
-    return bilibili_adapter
+# 便捷函数
+def get_bilibili_adapter(cookie: str = None) -> BilibiliAdapter:
+    """创建B站适配器实例"""
+    return BilibiliAdapter(cookie)

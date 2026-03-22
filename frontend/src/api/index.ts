@@ -6,6 +6,7 @@ import { ElMessage } from 'element-plus'
 
 // Base URL configuration
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8001'
+const COLLECTOR_BASE_URL = (import.meta as any).env?.VITE_COLLECTOR_BASE_URL || 'http://localhost:8004'
 
 // Create axios instance
 const service: AxiosInstance = axios.create({
@@ -15,6 +16,54 @@ const service: AxiosInstance = axios.create({
     'Content-Type': 'application/json'
   }
 })
+
+// Collector service (Data Collector on port 8004)
+const collectorService: AxiosInstance = axios.create({
+  baseURL: COLLECTOR_BASE_URL,
+  timeout: 60000,  // Longer timeout for data collection
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+
+// Collector request interceptor
+collectorService.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// Collector response interceptor
+collectorService.interceptors.response.use(
+  (response: AxiosResponse) => {
+    const res = response.data
+    if (res.code !== undefined) {
+      if (res.code === 200) {
+        return res.data !== undefined ? res.data : res
+      } else {
+        ElMessage.error(res.message || 'Request failed')
+        return Promise.reject(new Error(res.message || 'Request failed'))
+      }
+    }
+    return response.data
+  },
+  (error) => {
+    console.error('Collector response error:', error)
+    if (error.response?.status === 401) {
+      ElMessage.error('登录已过期，请重新登录')
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    } else if (error.response?.status === 404) {
+      ElMessage.error('请求的资源不存在')
+    }
+    return Promise.reject(error)
+  }
+)
 
 // Request interceptor
 service.interceptors.request.use(
@@ -73,6 +122,7 @@ service.interceptors.response.use(
   }
 )
 
+export { collectorService }
 export default service
 
 // API service URLs
@@ -109,10 +159,16 @@ export const API_URL = {
   COLLECTOR: {
     ACCOUNTS: '/api/v1/collector/accounts',
     ACCOUNT_DETAIL: (id: string) => `/api/v1/collector/accounts/${id}`,
+    ACCOUNT_CREATE: '/api/v1/collector/accounts',
+    ACCOUNT_UPDATE: (id: string) => `/api/v1/collector/accounts/${id}`,
+    ACCOUNT_DELETE: (id: string) => `/api/v1/collector/accounts/${id}`,
     COLLECT: '/api/v1/collector/collect',
     COLLECT_ALL: '/api/v1/collector/collect/all',
     VIDEOS: '/api/v1/collector/videos',
-    SEARCH_VIDEOS: '/api/v1/collector/videos/search'
+    VIDEO_DETAIL: (id: string) => `/api/v1/collector/videos/${id}`,
+    SEARCH_VIDEOS: '/api/v1/collector/videos/search',
+    SCHEDULER_STATUS: '/api/v1/collector/scheduler/status',
+    SCHEDULER_RUN_TASK: (taskId: string) => `/api/v1/collector/scheduler/tasks/${taskId}/run`
   },
 
   // Competitor Monitor (port 8005)

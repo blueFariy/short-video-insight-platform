@@ -5,6 +5,10 @@ from celery import Celery
 from celery.schedules import crontab
 from loguru import logger
 
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from app.core.config import settings
 
 
@@ -18,6 +22,7 @@ celery_app = Celery(
         'app.tasks.competitor_monitor',
         'app.tasks.video_update',
         'app.tasks.report_generator',
+        'app.tasks.douyin_collector',
     ]
 )
 
@@ -72,6 +77,20 @@ celery_app.conf.update(
             'task': 'app.tasks.maintenance.cleanup_old_data',
             'schedule': crontab(hour=3, minute=0),
             'options': {'queue': 'maintenance'}
+        },
+
+        # 6. 抖音热搜采集（每30分钟）
+        'scan-douyin-hot': {
+            'task': 'app.tasks.douyin_collector.scan_douyin_hot',
+            'schedule': crontab(minute='*/30'),
+            'options': {'queue': 'douyin_collector'}
+        },
+
+        # 7. 抖音关键词视频采集（每小时）
+        'collect-douyin-keywords': {
+            'task': 'app.tasks.douyin_collector.collect_douyin_by_keywords',
+            'schedule': crontab(minute=0),
+            'options': {'queue': 'douyin_collector'}
         }
     }
 )
@@ -80,4 +99,9 @@ logger.info("Celery app configured successfully")
 
 
 if __name__ == '__main__':
+    # celery -A app.celery_app worker --loglevel=info --pool=solo
+    # celery -A app.celery_app beat --loglevel=info
+    # celery -A app.celery_app call app.tasks.hot_scan.scan_all_platforms
+    # set FLOWER_UNAUTHENTICATED_API=true && celery -A app.celery_app flower --port=5556
+    # celery -A app.celery_app purge -f
     celery_app.start()

@@ -1,12 +1,17 @@
 """
 Data Collector Service Configuration
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from typing import Dict, List, Optional
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
     """Application settings"""
 
     # Service
@@ -61,10 +66,6 @@ class Settings(BaseSettings):
     # Alert Settings
     ALERT_ENABLED: bool = True
     ALERT_CHANNELS: List[str] = ["app", "email"]
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 @lru_cache()
