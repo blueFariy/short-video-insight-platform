@@ -26,8 +26,9 @@ class Settings(BaseSettings):
     EXPORT_FORMATS: List[str] = ["excel", "pdf", "csv"]
 
     class Config:
-        env_file = ".env"
+        env_file = "env/.env"
         case_sensitive = True
+        extra = "ignore"
 
 
 @lru_cache()

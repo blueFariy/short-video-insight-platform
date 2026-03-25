@@ -1,13 +1,139 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import service, { API_URL } from '@/api'
+import service, { videoService, insightService, API_URL } from '@/api'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const videoUrl = ref('')
 const videoPlatform = ref('')
+
+// 收藏夹相关
+const collections = ref<any[]>([])
+const selectedCollectionId = ref<string>('')
+
+// 历史记录相关
+const historyDialogVisible = ref(false)
+const historyLoading = ref(false)
+const analysisHistory = ref<any[]>([])
+
+// 当前分析的video ID（用于去重和识别）
+const currentVideoId = ref<string>('')
+
+const fetchCollections = async () => {
+  try {
+    // 使用专门的 folders API 获取收藏夹列表
+    const res = await service.get(API_URL.USER.COLLECTION_FOLDERS) as any
+    // interceptor 已经提取了 data，所以 res 就是文件夹数组
+    const folders = res || []
+    collections.value = folders.map((folder: any) => ({
+      id: folder.name,
+      name: folder.name
+    }))
+  } catch (error) {
+    console.error('Fetch collections error:', error)
+  }
+}
+
+// 获取分析历史记录
+const fetchAnalysisHistory = async () => {
+  historyLoading.value = true
+  try {
+    const res = await service.get(API_URL.INSIGHT.VIDEO_INSIGHT_ALL, {
+      params: { page: 1, page_size: 100 }
+    }) as any
+    const items = res?.items || []
+
+    analysisHistory.value = items
+      .filter((item: any) => item.item_id !== '0' && item.item_id !== 0)
+      .map((item: any) => {
+        let insightData = null
+        let videoInfo = item.video_info || {}
+        // 尝试从notes中解析insight数据
+        try {
+          if (item.notes && item.notes.startsWith('{')) {
+            const parsed = JSON.parse(item.notes)
+            if (parsed.insight) {
+              insightData = parsed.insight
+              videoInfo = parsed.video || videoInfo
+            }
+          }
+        } catch (e) {
+          // notes不是JSON格式，可能是普通备注
+        }
+        return {
+          id: item.id,
+          item_id: item.item_id,
+          title: insightData?.video?.title || videoInfo?.title || item.notes || '分析报告',
+          platform: videoInfo?.platform || '',
+          cover: insightData?.video?.cover || videoInfo?.cover_url || '',
+          insight: insightData,
+          video: videoInfo,
+          created_at: item.created_at
+        }
+      })
+  } catch (error) {
+    console.error('Fetch history error:', error)
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+// 打开历史记录对话框
+const openHistoryDialog = () => {
+  fetchAnalysisHistory()
+  historyDialogVisible.value = true
+}
+
+// 从历史记录查看分析
+const viewFromHistory = (item: any) => {
+  if (item.insight) {
+    // 直接使用保存的insight数据
+    analysisResult.value = item.insight
+    // 设置videoUrl以便后续可能的操作
+    videoUrl.value = item.video?.url || item.item_id || ''
+    videoPlatform.value = item.video?.platform || item.platform || ''
+    currentVideoId.value = item.item_id || ''
+  } else {
+    // 如果没有保存的insight数据，尝试重新分析
+    videoUrl.value = item.video?.url || item.item_id || ''
+    videoPlatform.value = item.video?.platform || item.platform || ''
+    if (videoUrl.value) {
+      handleAnalyze()
+    }
+  }
+  historyDialogVisible.value = false
+}
+
+// Auto-fill from query params
+onMounted(() => {
+  const url = route.query.url as string
+  const platform = route.query.platform as string
+  const itemId = route.query.item_id as string
+  const insightStr = route.query.insight as string
+
+  // 如果有insight数据（从素材库查看），直接加载
+  if (insightStr) {
+    try {
+      const insightData = JSON.parse(decodeURIComponent(insightStr))
+      analysisResult.value = insightData
+      videoUrl.value = url ? decodeURIComponent(url) : ''
+      videoPlatform.value = platform || ''
+      currentVideoId.value = itemId || ''
+    } catch (e) {
+      console.error('Parse insight error:', e)
+    }
+  } else if (url) {
+    videoUrl.value = decodeURIComponent(url)
+    videoPlatform.value = platform
+    // Auto start analysis if params exist
+    handleAnalyze()
+  }
+  // 获取收藏夹列表
+  fetchCollections()
+})
 const analysisResult = ref<any>(null)
 
 // Platform options
@@ -28,32 +154,43 @@ const handleAnalyze = async () => {
   loading.value = true
   try {
     // Call video service to process video
-    const videoData = await service.post(API_URL.VIDEO.PROCESS, {
+    const videoData = await videoService.post(API_URL.VIDEO.PROCESS, {
       url: videoUrl.value,
       platform: videoPlatform.value || undefined
     }) as any
 
     // Call insight service for comprehensive analysis
-    const insightData = await service.post(API_URL.INSIGHT.COMPREHENSIVE, {
+    const insightData = await insightService.post(API_URL.INSIGHT.COMPREHENSIVE, {
       video_title: videoData.title || '视频分析',
       video_script: videoData.script || '',
       keyframes: videoData.keyframes || [],
       duration: videoData.duration
     }) as any
 
+    // 处理封面URL，解决B站图片403问题
+    let coverUrl = videoData.cover_url || ''
+    if (coverUrl && coverUrl.includes('hdslb.com')) {
+      coverUrl = `${API_URL.COLLECTOR.IMAGE_PROXY}?url=${encodeURIComponent(coverUrl)}`
+    }
+
     analysisResult.value = {
       video: {
         title: videoData.title,
-        cover: videoData.cover_url,
+        cover: coverUrl,
         platform: videoData.platform,
+        url: videoData.url || videoUrl.value,
         stats: {
-          views: videoData.views || 0,
-          likes: videoData.likes || 0,
-          comments: videoData.comments || 0
+          // 兼容不同字段名
+          views: videoData.view_count || videoData.views || 0,
+          likes: videoData.like_count || videoData.likes || 0,
+          comments: videoData.comment_count || videoData.comments || 0
         }
       },
       insight: insightData
     }
+
+    // 保存video ID用于后续去重识别
+    currentVideoId.value = videoData.video_info.video_id || videoData.video_info.aweme_id || videoUrl.value
 
     ElMessage.success('分析完成')
   } catch (error: any) {
@@ -105,36 +242,100 @@ const getDemoData = () => ({
   }
 })
 
-// Handle collect
+// Handle collect - 只更新已有收藏，不创建新记录
 const handleCollect = async (type: string) => {
   if (!analysisResult.value) return
 
+  if (!selectedCollectionId.value) {
+    ElMessage.warning('请先选择收藏夹')
+    return
+  }
+
   try {
-    await service.post(API_URL.USER.ADD_COLLECTION, {
-      title: analysisResult.value.video.title,
-      type,
-      content: type === 'hook'
-        ? analysisResult.value.insight.hook?.hook_text
-        : JSON.stringify(analysisResult.value.insight.structure?.segments),
-      tags: [type]
+    // 使用视频URL作为唯一标识符，便于去重检查
+    const videoId = currentVideoId.value || analysisResult.value.video.url || videoUrl.value
+
+    // 构建要保存的数据
+    const notesData = JSON.stringify({
+      video: analysisResult.value.video,
+      insight: analysisResult.value
     })
-    ElMessage.success('收藏成功')
-  } catch (error) {
-    ElMessage.info('收藏功能演示')
+
+    // 先检查是否已存在相同视频的收藏
+    const checkRes = await service.get(API_URL.USER.COLLECTIONS, {
+      params: { page: 1, page_size: 10, item_id: videoId }
+    }) as any
+
+    const existingItems = checkRes?.items || []
+    const existingItem = existingItems.find((item: any) => item.item_id === videoId)
+
+    if (existingItem) {
+      // 已存在该视频的收藏，更新为insight类型并保存分析数据
+      await service.put(API_URL.USER.UPDATE_COLLECTION(existingItem.id), {
+        item_type: 'insight',
+        notes: notesData,
+        tags: [type],
+        folder: selectedCollectionId.value
+      } as any)
+      ElMessage.success('已更新为分析状态')
+    } else {
+      // 不存在该视频的收藏，不创建新记录，只提示用户
+      ElMessage.info('该视频尚未收藏，请先从数据采集模块添加收藏后再分析')
+    }
+  } catch (error: any) {
+    console.error('Save error:', error)
+    ElMessage.error(error.message || '保存失败')
   }
 }
 
 // Handle save to library
-const handleSave = () => {
-  handleCollect('script')
+const handleSave = async () => {
+  if (!analysisResult.value) return
+
+  try {
+    // 构建视频信息
+    const videoData = analysisResult.value.video
+    const insightData = analysisResult.value.insight
+
+    // 提取视频ID (platform_video_id)
+    const platformVideoId = currentVideoId.value || videoData.url || ''
+
+    // 从insight数据中提取结构化信息
+    const requestData: any = {
+      platform: videoData.platform || videoPlatform.value,
+      video_id: platformVideoId,
+      video_title: videoData.title,
+      video_url: videoData.url,
+      ai_summary: insightData?.overall?.summary || '',
+      hook_3s: insightData?.analysis?.hook?.hook_text || '',
+      hook_type: insightData?.analysis?.hook?.hook_type || '',
+      structure_type: insightData?.analysis?.structure?.type || '',
+      structure_analysis: insightData?.analysis?.structure ? { segments: insightData?.analysis.structure.segments } : null,
+      keywords: insightData?.overall?.highlights || [],
+      viral_factors: insightData?.overall?.dimensions || null
+    }
+
+    // 调用保存insight接口
+    await insightService.post(API_URL.INSIGHT.VIDEO_INSIGHTS, requestData)
+    ElMessage.success('分析报告已保存到素材库')
+  } catch (error: any) {
+    console.error('Save insight error:', error)
+    // 如果保存insight失败，回退到原来的保存方式
+    handleCollect('script')
+  }
 }
 </script>
 
 <template>
   <div class="analysis-page">
     <div class="page-header">
-      <h2>AI爆款拆解</h2>
-      <p>输入视频链接，AI自动生成深度分析报告</p>
+      <div class="header-left">
+        <h2>AI爆款拆解</h2>
+        <p>输入视频链接，AI自动生成深度分析报告</p>
+      </div>
+      <el-button type="primary" link @click="openHistoryDialog">
+        <el-icon><Clock /></el-icon> 历史记录
+      </el-button>
     </div>
 
     <!-- Input Section -->
@@ -276,6 +477,9 @@ const handleSave = () => {
 
       <!-- Actions -->
       <div class="actions">
+        <el-select v-model="selectedCollectionId" placeholder="选择收藏夹" style="width: 150px">
+          <el-option v-for="c in collections" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
         <el-button type="primary" @click="handleSave">
           <el-icon><Collection /></el-icon> 保存到素材库
         </el-button>
@@ -287,6 +491,34 @@ const handleSave = () => {
 
     <!-- Empty State -->
     <el-empty v-else description="输入视频链接开始分析" />
+
+    <!-- 历史记录对话框 -->
+    <el-dialog v-model="historyDialogVisible" title="分析历史记录" width="700px">
+      <div v-loading="historyLoading">
+        <el-table :data="analysisHistory" v-if="analysisHistory.length > 0" max-height="400">
+          <el-table-column prop="title" label="视频标题" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="platform" label="平台" width="80">
+            <template #default="{ row }">
+              <el-tag v-if="row.platform" :type="row.platform === 'bilibili' ? 'primary' : row.platform === 'douyin' ? 'danger' : 'warning'" size="small">
+                {{ row.platform === 'bilibili' ? 'B站' : row.platform === 'douyin' ? '抖音' : row.platform }}
+              </el-tag>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="分析时间" width="160">
+            <template #default="{ row }">
+              {{ new Date(row.created_at).toLocaleString() }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100">
+            <template #default="{ row }">
+              <el-button type="primary" size="small" @click="viewFromHistory(row)">查看</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无分析历史记录" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -299,6 +531,13 @@ const handleSave = () => {
 
 .page-header {
   margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+
+  .header-left {
+    flex: 1;
+  }
 
   h2 {
     font-size: 20px;

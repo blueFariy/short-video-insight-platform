@@ -5,10 +5,12 @@ import json
 import asyncio
 from typing import Optional, Dict, Any, List
 from loguru import logger
+import dotenv
 
 from app.core.config import settings
 from app.core.exceptions import AIException
 
+dotenv.load_dotenv('/app/env/.env')
 
 class AIService:
     """AI Service for video analysis"""

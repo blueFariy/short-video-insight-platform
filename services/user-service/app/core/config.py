@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/video_insight"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/short_video_insight"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["*"]
 
     class Config:
-        env_file = ".env"
+        env_file = "env/.env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()

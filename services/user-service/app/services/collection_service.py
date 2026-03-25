@@ -1,13 +1,13 @@
 """
 Collection Service
 """
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 from sqlalchemy import select, and_, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
-from app.models import Collection, Video, Creator
+from app.models import Collection, Video, Creator, VideoInsight
 from app.core.exceptions import NotFoundException, ConflictException
 
 
@@ -23,7 +23,7 @@ class CollectionService:
         db: AsyncSession,
         user_id: int,
         item_type: str,
-        item_id: int,
+        item_id: Union[int, str],
         notes: Optional[str] = None,
         tags: Optional[List[str]] = None,
         folder: Optional[str] = None
@@ -35,7 +35,7 @@ class CollectionService:
             db: 数据库会话
             user_id: 用户ID
             item_type: 收藏类型
-            item_id: 收藏项ID
+            item_id: 收藏项ID (支持数字或字符串如B站BV号)
             notes: 备注
             tags: 标签
             folder: 文件夹
@@ -51,18 +51,20 @@ class CollectionService:
         if item_type not in VALID_ITEM_TYPES:
             raise ConflictException(message=f"Invalid item type: {item_type}")
 
-        # 检查是否已收藏
-        result = await db.execute(
-            select(Collection).where(
-                and_(
-                    Collection.user_id == user_id,
-                    Collection.item_type == item_type,
-                    Collection.item_id == item_id
+        # 只有当item_id不为"0"或0时才检查重复（item_id=0表示创建文件夹）
+        is_folder = (item_id == 0 or item_id == "0")
+        if not is_folder:
+            result = await db.execute(
+                select(Collection).where(
+                    and_(
+                        Collection.user_id == user_id,
+                        Collection.item_type == item_type,
+                        Collection.item_id == item_id
+                    )
                 )
             )
-        )
-        if result.scalar_one_or_none():
-            raise ConflictException(message="Item already collected")
+            if result.scalar_one_or_none():
+                raise ConflictException(message="Item already collected")
 
         # 创建收藏
         collection = Collection(
@@ -72,7 +74,7 @@ class CollectionService:
             notes=notes,
             tags=tags,
             folder=folder,
-            is_favorite=False
+            is_analysis=False
         )
         db.add(collection)
         await db.commit()
@@ -125,10 +127,12 @@ class CollectionService:
         db: AsyncSession,
         user_id: int,
         collection_id: int,
+        item_type: Optional[str] = None,
+        item_id: Optional[str] = None,
         notes: Optional[str] = None,
         tags: Optional[List[str]] = None,
         folder: Optional[str] = None,
-        is_favorite: Optional[bool] = None
+        is_analysis: Optional[bool] = None
     ) -> Collection:
         """更新收藏"""
         result = await db.execute(
@@ -145,14 +149,18 @@ class CollectionService:
             raise NotFoundException(message="Collection not found")
 
         # 更新字段
+        if item_type is not None:
+            collection.item_type = item_type
+        if item_id is not None:
+            collection.item_id = item_id
         if notes is not None:
             collection.notes = notes
         if tags is not None:
             collection.tags = tags
         if folder is not None:
             collection.folder = folder
-        if is_favorite is not None:
-            collection.is_favorite = is_favorite
+        if is_analysis is not None:
+            collection.is_analysis = is_analysis
 
         await db.commit()
         await db.refresh(collection)
@@ -182,21 +190,24 @@ class CollectionService:
         db: AsyncSession,
         user_id: int,
         item_type: Optional[str] = None,
+        item_id: Optional[str] = None,
         folder: Optional[str] = None,
-        is_favorite: Optional[bool] = None,
+        is_analysis: Optional[bool] = None,
         page: int = 1,
         page_size: int = 20
     ) -> tuple[List[Collection], int]:
         """获取收藏列表"""
         # 构建查询条件
         conditions = [Collection.user_id == user_id]
-
+        conditions.append(Collection.item_id != "0")
         if item_type:
             conditions.append(Collection.item_type == item_type)
+        if item_id:
+            conditions.append(Collection.item_id == item_id)
         if folder:
             conditions.append(Collection.folder == folder)
-        if is_favorite is not None:
-            conditions.append(Collection.is_favorite == is_favorite)
+        if is_analysis is not None:
+            conditions.append(Collection.is_analysis == is_analysis)
 
         # 查询总数
         count_result = await db.execute(
@@ -214,6 +225,63 @@ class CollectionService:
             .limit(page_size)
         )
         collections = result.scalars().all()
+
+        # 为每个收藏项获取视频详情 - 从videos表查询
+        from sqlalchemy import text
+        for collection in collections:
+            if collection.item_type == "video" and collection.item_id:
+                # 查询视频信息 - 使用videos表
+                video_result = await db.execute(
+                    text("""
+                        SELECT v.id, v.platform, v.video_id, v.title, v.video_url as url, v.cover_image_url as cover_url,
+                               v.creator_id,v.creator_name,
+                               v.play_count, v.like_count, v.comment_count, v.share_count, v.collect_count,
+                               v.publish_time, v.duration
+                        FROM videos v
+                        WHERE v.video_id = :video_id
+                        LIMIT 1
+                    """),
+                    {"video_id": str(collection.item_id)}
+                )
+                video_row = video_result.fetchone()
+                if video_row:
+                    collection.video_info = {
+                        "platform": video_row.platform,
+                        "video_id": video_row.video_id,
+                        "title": video_row.title or collection.notes,
+                        "url": video_row.url,
+                        "cover_url": video_row.cover_url,
+                        "play_count": video_row.play_count or 0,
+                        "like_count": video_row.like_count or 0,
+                        "comment_count": video_row.comment_count or 0,
+                        "share_count": video_row.share_count or 0,
+                        "collect_count": video_row.collect_count or 0,
+                        "publish_time": video_row.publish_time.isoformat() if video_row.publish_time else None,
+                        "creator_id": video_row.creator_id,
+                        "creator_name": video_row.creator_name,
+                        "duration": video_row.duration
+                    }
+                else:
+                    # 如果没找到视频，使用收藏时的notes作为标题
+                    collection.video_info = {
+                        "platform": "",
+                        "video_id": str(collection.item_id),
+                        "title": collection.notes or "未知视频",
+                        "url": "",
+                        "cover_url": "",
+                        "play_count": 0,
+                        "like_count": 0,
+                        "comment_count": 0,
+                        "share_count": 0,
+                        "collect_count": 0,
+                        "publish_time": None,
+                        "creator_name": "",
+                        "duration": 0
+                    }
+                insight_result = await db.execute(select(VideoInsight).where(VideoInsight.video_id == video_row.id))
+                if insight_result.scalar_one_or_none():
+                    collection.is_analysis = True
+
 
         return list(collections), total
 
@@ -259,11 +327,11 @@ class CollectionService:
         if not collection:
             raise NotFoundException(message="Collection not found")
 
-        collection.is_favorite = not collection.is_favorite
+        collection.is_analysis = not collection.is_analysis
         await db.commit()
         await db.refresh(collection)
 
-        logger.info(f"Collection favorite toggled: id={collection_id}, is_favorite={collection.is_favorite}")
+        logger.info(f"Collection favorite toggled: id={collection_id}")
         return collection
 
     @staticmethod
@@ -318,27 +386,28 @@ class CollectionService:
             for row in folder_result.fetchall()
         ]
 
-        # 标星数量
-        fav_result = await db.execute(
+        # 已分析数量
+        analysis_result = await db.execute(
             select(func.count()).select_from(Collection).where(
                 and_(
                     Collection.user_id == user_id,
-                    Collection.is_favorite == True
+                    Collection.is_analysis == True
                 )
             )
         )
-        favorites = fav_result.scalar()
+        analysis = analysis_result.scalar()
 
         return {
             "total": total,
             "by_type": by_type,
             "by_folder": by_folder,
-            "favorites": favorites
+            "analysis": analysis
         }
 
     @staticmethod
-    async def get_folders(db: AsyncSession, user_id: int) -> List[str]:
-        """获取用户的所有文件夹"""
+    async def get_folders(db: AsyncSession, user_id: int) -> List[dict]:
+        """获取用户的所有文件夹及数量"""
+        # 先获取所有有folder的记录（包括item_id='0'的文件夹本身）
         result = await db.execute(
             select(Collection.folder)
             .where(
@@ -349,7 +418,24 @@ class CollectionService:
             )
             .group_by(Collection.folder)
         )
-        folders = [row[0] for row in result.fetchall() if row[0]]
+        folder_names = [row[0] for row in result.fetchall() if row[0]]
+
+        # 为每个文件夹统计实际收藏数量（排除item_id='0'的文件夹记录）
+        folders = []
+        for folder_name in folder_names:
+            count_result = await db.execute(
+                select(func.count(Collection.id))
+                .where(
+                    and_(
+                        Collection.user_id == user_id,
+                        Collection.folder == folder_name,
+                        Collection.item_id != "0"
+                    )
+                )
+            )
+            count = count_result.scalar() or 0
+            folders.append({"name": folder_name, "count": count})
+
         return folders
 
 

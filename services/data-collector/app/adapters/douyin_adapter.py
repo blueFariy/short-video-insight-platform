@@ -12,7 +12,7 @@ from loguru import logger
 import aiohttp
 
 from app.adapters.base import PlatformAdapter, DataSourceFallbackMixin
-from app.models import Video, Creator, VideoMetrics
+from app.schemas import Creator, Video, VideoMetrics
 from app.core.config import settings
 
 
@@ -535,13 +535,6 @@ class DouyinAdapter(PlatformAdapter, DataSourceFallbackMixin):
         # 加载cookies（如果没有提供则使用默认路径）
         if cookie:
             self._load_cookies(cookie)
-        else:
-            # 尝试默认路径
-            default_cookie = os.path.join(os.path.dirname(__file__), 'cookies_douyin.txt')
-            if os.path.exists(default_cookie):
-                self._load_cookies(default_cookie)
-            else:
-                logger.warning("No cookie file provided and default not found, some features may be limited")
 
         # 初始化API客户端
         self.api = DouKAPI(base_url=douk_url, token=token)

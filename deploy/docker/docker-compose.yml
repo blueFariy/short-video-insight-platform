@@ -1,6 +1,7 @@
 # Short Video Insight Platform - Docker Compose
 # docker compose -f deploy/docker/docker-compose.yml build data-collector
 # docker compose -f deploy/docker/docker-compose.yml up -d data-collector
+# docker exec -it short-video-data-collector /bin/bash
 version: '3.8'
 
 services:
@@ -15,7 +16,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -103,9 +104,8 @@ services:
       - ELASTICSEARCH_HOST=elasticsearch
       - ELASTICSEARCH_PORT=9200
     volumes:
-      - ./cookies:/app/cookies
-      - ./downloads:/app/downloads
-      - ./temp:/app/temp
+      - ../../cookies:/app/cookies
+      - ../../.env:/app/env/.env
     develop:
       watch:
         - action: sync
@@ -137,10 +137,12 @@ services:
     container_name: short-video-insight-service
     ports:
       - "8003:8003"
+    volumes:
+      - ../../.env:/app/env/.env
     develop:
       watch:
         - action: sync
-          path: ../../services/insight-service  # 监听整个服务目录
+          path: ../../services/insight-generator  # 监听整个服务目录
           target: /app
           ignore: # 排除不需要同步的目录
             - __pycache__/
@@ -151,10 +153,11 @@ services:
             - .idea/
             - .vscode/
         - action: rebuild
-          path: ../../services/insight-service/requirements.txt  # 依赖变更时重建
+          path: ../../services/insight-generator/requirements.txt  # 依赖变更时重建
     environment:
       - AI_PROVIDER=deepseek
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
+#      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
 
   # Data Collector Service
   data-collector:
@@ -168,6 +171,9 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    volumes:
+      - ../../cookies:/app/cookies
+      - ../../.env:/app/env/.env
     develop:
       watch:
         - action: sync
@@ -196,6 +202,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    volumes:
+      - ../../.env:/app/env/.env
     develop:
       watch:
         - action: sync
@@ -222,6 +230,8 @@ services:
       - "8006:8006"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
+    volumes:
+      - ../../.env:/app/env/.env
     develop:
       watch:
         - action: sync

@@ -37,6 +37,15 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager"""
     logger.info(f"{settings.SERVICE_NAME} starting up...")
 
+    # Initialize database
+    from app.models import db_manager
+    try:
+        db_manager.init_db()
+        await db_manager.create_tables()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+
     # Start scheduler
     from app.services.scheduler_service import scheduler_service
 
@@ -55,6 +64,8 @@ async def lifespan(app: FastAPI):
 
     # Stop scheduler
     await scheduler_service.stop()
+    # Close database connection
+    await db_manager.close()
     logger.info(f"{settings.SERVICE_NAME} shutting down...")
 
 
@@ -100,7 +111,7 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        "app.main:app",
         host=settings.SERVICE_HOST,
         port=settings.SERVICE_PORT,
         reload=True

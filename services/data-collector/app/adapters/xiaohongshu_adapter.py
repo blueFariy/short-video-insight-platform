@@ -11,7 +11,7 @@ from loguru import logger
 import aiohttp
 
 from app.adapters.base import PlatformAdapter
-from app.models import Video, Creator, VideoMetrics
+from app.schemas import Creator, Video, VideoMetrics
 from app.core.config import settings
 
 

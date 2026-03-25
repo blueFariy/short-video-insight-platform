@@ -111,19 +111,22 @@ async def update_collection(
     """
     更新收藏信息
 
+    - **item_type**: 收藏类型 (可选)
     - **notes**: 备注 (可选)
     - **tags**: 标签列表 (可选)
     - **folder**: 收藏夹名称 (可选)
-    - **is_favorite**: 是否标星 (可选)
+    - **is_analysis**: 是否已分析 (可选)
     """
     collection = await collection_service.update_collection(
         db,
         user_id=user_id,
         collection_id=collection_id,
+        item_type=request.item_type,
+        item_id=request.item_id,
         notes=request.notes,
         tags=request.tags,
         folder=request.folder,
-        is_favorite=request.is_favorite
+        is_analysis=request.is_analysis
     )
     return success_response(
         data=CollectionResponse.model_validate(collection),
@@ -138,8 +141,9 @@ async def update_collection(
 )
 async def get_collections(
     item_type: Optional[str] = None,
+    item_id: Optional[str] = None,
     folder: Optional[str] = None,
-    is_favorite: Optional[bool] = None,
+    is_analysis: Optional[bool] = None,
     page: int = 1,
     page_size: int = 20,
     user_id: int = Depends(get_current_user_id),
@@ -149,8 +153,9 @@ async def get_collections(
     获取用户的收藏列表
 
     - **item_type**: 按类型筛选 (可选)
+    - **item_id**: 按项目ID筛选 (可选)
     - **folder**: 按文件夹筛选 (可选)
-    - **is_favorite**: 筛选标星收藏 (可选)
+    - **is_analysis**: 筛选是否已分析 (可选)
     - **page**: 页码 (默认1)
     - **page_size**: 每页数量 (默认20)
     """
@@ -158,8 +163,9 @@ async def get_collections(
         db,
         user_id=user_id,
         item_type=item_type,
+        item_id=item_id,
         folder=folder,
-        is_favorite=is_favorite,
+        is_analysis=is_analysis,
         page=page,
         page_size=page_size
     )
@@ -172,25 +178,6 @@ async def get_collections(
             page_size=page_size
         )
     )
-
-
-@router.post(
-    "/{collection_id}/toggle-favorite",
-    response_model=ResponseModel[CollectionResponse],
-    summary="切换标星状态"
-)
-async def toggle_favorite(
-    collection_id: int,
-    user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
-):
-    """切换收藏的标星状态"""
-    collection = await collection_service.toggle_favorite(db, user_id, collection_id)
-    return success_response(
-        data=CollectionResponse.model_validate(collection),
-        message="Favorite toggled successfully"
-    )
-
 
 @router.post(
     "/move",

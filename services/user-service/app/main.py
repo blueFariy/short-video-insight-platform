@@ -33,7 +33,11 @@ async def lifespan(app: FastAPI):
 
     # Initialize database
     db_manager.init_db()
-    logger.info("Database initialized")
+    # Import models so Base.metadata can see them
+    from app.models import User, Creator, Video, VideoScript, VideoInsight, Collection, CompetitorWatch, TrendReport  # noqa: F401
+    # Create tables
+    await db_manager.create_tables()
+    logger.info("Database initialized and tables created")
 
     # Initialize Redis
     try:

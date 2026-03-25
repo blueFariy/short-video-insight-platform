@@ -18,8 +18,8 @@ def get_platform_adapter(platform: str) -> PlatformAdapter:
         Platform adapter instance
     """
     adapters = {
-        'douyin': get_douyin_adapter(cookie="app/cookies/cookies_douyin.txt"),
-        'bilibili': get_bilibili_adapter(cookie="app/cookies/cookies_bilibili.txt"),
+        'douyin': get_douyin_adapter(cookie="/app/cookies/cookies_douyin.txt"),
+        'bilibili': get_bilibili_adapter(cookie="/app/cookies/cookies_bilibili.txt"),
         'xiaohongshu': xiaohongshu_adapter,
     }
 

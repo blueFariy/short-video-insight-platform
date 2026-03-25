@@ -348,6 +348,9 @@ CREATE TABLE creators (
     stats_updated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     
+    -- 是否被监听
+    is_monitored BOOLEAN DEFAULT FALSE,
+    
     UNIQUE(platform, creator_id),
     INDEX idx_creators_follower (follower_count DESC)
 );
@@ -362,12 +365,12 @@ CREATE TABLE collections (
     
     -- 可收藏多种类型，使用多态关联
     item_type VARCHAR(20) NOT NULL,  -- 'video', 'script', 'hook', 'structure'
-    item_id BIGINT NOT NULL,
+    item_id VARCHAR(100) NOT NULL,
     
     notes TEXT,  -- 用户备注
     tags TEXT[],  -- 用户自定义标签
     folder VARCHAR(100),  -- 收藏夹分类
-    is_favorite BOOLEAN DEFAULT FALSE,
+    status BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     
     INDEX idx_collections_user (user_id),

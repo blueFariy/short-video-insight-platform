@@ -40,7 +40,7 @@ class User(Base):
     job_title: Mapped[Optional[str]] = mapped_column(String(50))
     preferences: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()", onupdate="NOW()")
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
     last_login: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     subscription_tier: Mapped[str] = mapped_column(String(20), default="free")
@@ -72,6 +72,7 @@ class Creator(Base):
     main_category: Mapped[Optional[str]] = mapped_column(String(50))
     stats_updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
+    is_monitored: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (
         UniqueConstraint("platform", "creator_id", name="uq_creator_platform_id"),
@@ -111,7 +112,7 @@ class Video(Base):
     data_quality_score: Mapped[float] = mapped_column(Float, default=1.0)
     is_denoised: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()", onupdate="NOW()")
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
 
     __table_args__ = (
         UniqueConstraint("platform", "video_id", name="uq_video_platform_id"),
@@ -140,7 +141,7 @@ class VideoScript(Base):
     bgm_info: Mapped[Optional[dict]] = mapped_column(JSONB)
     audio_emotion: Mapped[Optional[str]] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()", onupdate="NOW()")
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
 
     # 关系
     video: Mapped["Video"] = relationship("Video", back_populates="scripts")
@@ -182,11 +183,11 @@ class Collection(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     item_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    item_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    item_id: Mapped[str] = mapped_column(String(100), nullable=False)  # 支持字符串如B站BV号
     notes: Mapped[Optional[str]] = mapped_column(Text)
     tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text))
     folder: Mapped[Optional[str]] = mapped_column(String(100))
-    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_analysis: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default="NOW()")
 
     __table_args__ = (

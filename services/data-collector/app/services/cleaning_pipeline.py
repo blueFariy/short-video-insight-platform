@@ -5,7 +5,7 @@ from typing import Optional, List, Dict
 from datetime import datetime
 from loguru import logger
 
-from app.models import Video
+from app.schemas import Video
 
 
 class DataCleaningPipeline:

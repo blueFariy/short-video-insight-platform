@@ -15,6 +15,7 @@ const menuItems = [
   { path: '/analysis', icon: 'DataAnalysis', label: 'AI分析报告' },
   { path: '/library', icon: 'Collection', label: '素材库' },
   { path: '/collector', icon: 'Upload', label: '数据采集' },
+  { path: '/collector/manual', icon: 'Plus', label: '手动采集' },
   { path: '/monitor', icon: 'Monitor', label: '竞品监控' },
   { path: '/reports', icon: 'TrendCharts', label: '趋势报告' }
 ]

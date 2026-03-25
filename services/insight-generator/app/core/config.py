@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
     # AI Models - DeepSeek
-    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_API_KEY: str = "sk-d5f22e6bf7ca443b8014a1625c46f3e6"
     DEEPSEEK_MODEL: str = "deepseek-chat"
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
 
@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     MAX_VIDEO_DURATION: int = 600  # 10 minutes
 
     class Config:
-        env_file = ".env"
+        env_file = "env/.env"
         case_sensitive = True
+        extra = "ignore"
 
 
 @lru_cache()

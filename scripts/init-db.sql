@@ -23,28 +23,31 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
--- Creators table
+-- Creators table - 主键为 (platform, creator_id)
 CREATE TABLE IF NOT EXISTS creators (
-    id BIGSERIAL PRIMARY KEY,
     platform VARCHAR(20) NOT NULL,
     creator_id VARCHAR(100) NOT NULL,
     name VARCHAR(100) NOT NULL,
+    url TEXT,
     avatar_url TEXT,
     bio TEXT,
     follower_count BIGINT DEFAULT 0,
     following_count BIGINT DEFAULT 0,
     total_likes BIGINT DEFAULT 0,
+    video_count BIGINT DEFAULT 0,
     avg_play_count BIGINT DEFAULT 0,
     avg_interaction_rate FLOAT,
     main_category VARCHAR(50),
     stats_updated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(platform, creator_id)
+    is_monitored BOOLEAN DEFAULT FALSE,
+    PRIMARY KEY (platform, creator_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_creators_follower ON creators(follower_count DESC);
+CREATE INDEX IF NOT EXISTS idx_creators_monitored ON creators(is_monitored);
 
--- Videos table
+-- Videos table - creator_id 改为 VARCHAR(100) 存储平台的 creator_id
 CREATE TABLE IF NOT EXISTS videos (
     id BIGSERIAL PRIMARY KEY,
     platform VARCHAR(20) NOT NULL,
@@ -59,9 +62,11 @@ CREATE TABLE IF NOT EXISTS videos (
     like_count BIGINT DEFAULT 0,
     comment_count BIGINT DEFAULT 0,
     share_count BIGINT DEFAULT 0,
+    danmaku_count BIGINT DEFAULT 0,
+    coin_count BIGINT DEFAULT 0,
     collect_count BIGINT DEFAULT 0,
-    forward_count BIGINT DEFAULT 0,
-    creator_id BIGINT REFERENCES creators(id),
+    creator_id VARCHAR(100),
+    creator_name VARCHAR(500),
     category VARCHAR(50),
     tags TEXT[],
     ai_generated_tags TEXT[],
@@ -125,7 +130,7 @@ CREATE TABLE IF NOT EXISTS collections (
     notes TEXT,
     tags TEXT[],
     folder VARCHAR(100),
-    is_favorite BOOLEAN DEFAULT FALSE,
+    is_analysis BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -136,13 +141,14 @@ CREATE INDEX IF NOT EXISTS idx_collections_item ON collections(item_type, item_i
 CREATE TABLE IF NOT EXISTS competitor_watch (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    creator_id BIGINT NOT NULL REFERENCES creators(id) ON DELETE CASCADE,
+    platform VARCHAR(20) NOT NULL,
+    creator_id VARCHAR(100) NOT NULL,
     watch_name VARCHAR(100),
     alert_threshold INT DEFAULT 20,
     last_alert_at TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(user_id, creator_id)
+    UNIQUE(user_id, platform, creator_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_competitor_watch_user ON competitor_watch(user_id);

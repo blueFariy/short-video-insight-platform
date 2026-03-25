@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from loguru import logger
 
-from app.models import Video, Creator, VideoMetrics
+from app.schemas import Video, Creator, VideoMetrics
 
 
 class PlatformAdapter(ABC):

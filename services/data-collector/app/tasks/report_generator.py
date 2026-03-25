@@ -8,7 +8,7 @@ from loguru import logger
 from datetime import datetime, timedelta
 from sqlalchemy import select, func
 
-from app.core.database import db_manager, CollectedVideo, MonitoredAccount
+from app.core.database import db_manager, Video, Creator
 
 
 @shared_task(bind=True, max_retries=1)
@@ -52,12 +52,12 @@ def _collect_daily_stats():
         async def _query():
             async with db_manager.get_session() as session:
                 # 统计总视频数
-                total_stmt = select(func.count(CollectedVideo.id))
+                total_stmt = select(func.count(Video.id))
                 total_result = await session.execute(total_stmt)
                 total_videos = total_result.scalar() or 0
 
                 # 统计总播放量
-                plays_stmt = select(func.sum(CollectedVideo.play_count))
+                plays_stmt = select(func.sum(Video.play_count))
                 plays_result = await session.execute(plays_stmt)
                 total_plays = plays_result.scalar() or 0
 
@@ -65,9 +65,9 @@ def _collect_daily_stats():
                 platforms = {}
                 for platform in ['douyin', 'bilibili', 'xiaohongshu']:
                     platform_stmt = select(
-                        func.count(CollectedVideo.id),
-                        func.sum(CollectedVideo.play_count)
-                    ).where(CollectedVideo.platform == platform)
+                        func.count(Video.id),
+                        func.sum(Video.play_count)
+                    ).where(Video.platform == platform)
                     platform_result = await session.execute(platform_stmt)
                     row = platform_result.one()
                     platforms[platform] = {
@@ -113,8 +113,8 @@ def _get_top_videos_from_db() -> list:
 
         async def _query():
             async with db_manager.get_session() as session:
-                stmt = select(CollectedVideo).order_by(
-                    CollectedVideo.play_count.desc()
+                stmt = select(Video).order_by(
+                    Video.play_count.desc()
                 ).limit(10)
                 result = await session.execute(stmt)
                 videos = result.scalars().all()

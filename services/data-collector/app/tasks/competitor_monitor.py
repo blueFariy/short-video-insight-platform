@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from app.adapters import get_platform_adapter
-from app.core.database import db_manager, MonitoredAccount, CollectedVideo
+from app.core.database import db_manager, Creator, Video
 
 
 @shared_task(bind=True, max_retries=2)
@@ -130,18 +130,19 @@ def _get_active_accounts_from_db():
 
         async def _query():
             async with db_manager.get_session() as session:
-                stmt = select(MonitoredAccount).where(MonitoredAccount.status == "active")
+                # Get only monitored creators
+                stmt = select(Creator).where(Creator.is_monitored == True)
                 result = await session.execute(stmt)
                 accounts = result.scalars().all()
 
                 return [
                     {
-                        "id": a.id,
+                        "id": str(a.id),
                         "user_id": 1,  # 暂时使用默认用户
                         "platform": a.platform,
-                        "account_id": a.account_id,
+                        "account_id": a.creator_id,
                         "name": a.name,
-                        "avg_play_count": a.follower_count or 0,
+                        "avg_play_count": a.avg_play_count or 0,
                         "alert_threshold": 30
                     }
                     for a in accounts

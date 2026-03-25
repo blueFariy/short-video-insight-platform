@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select, and_
 
 from app.adapters import get_platform_adapter
-from app.core.database import db_manager, CollectedVideo
+from app.models import db_manager, Video
 
 
 @shared_task(bind=True, max_retries=2)
@@ -57,7 +57,7 @@ def send_viral_alert(video_data: dict, signal_data: dict):
     使用 AlertService 发送多渠道通知
     """
     from app.services.alert_service import alert_service
-    from app.models import Video, VideoMetrics, ViralSignal
+    from app.schemas import Video, VideoMetrics, ViralSignal
 
     logger.info(f"Sending viral alert for video: {video_data.get('video_id')}")
 
@@ -126,11 +126,8 @@ def _get_recent_videos_from_db(hours: int = 24):
             async with db_manager.get_session() as session:
                 # 获取最近24小时发布的视频
                 cutoff_time = datetime.now() - timedelta(hours=hours)
-                stmt = select(CollectedVideo).where(
-                    and_(
-                        CollectedVideo.publish_time >= cutoff_time,
-                        CollectedVideo.is_deleted == False
-                    )
+                stmt = select(Video).where(
+                    Video.publish_time >= cutoff_time
                 )
                 result = await session.execute(stmt)
                 db_videos = result.scalars().all()
@@ -139,7 +136,7 @@ def _get_recent_videos_from_db(hours: int = 24):
                     {
                         "video_id": v.video_id,
                         "platform": v.platform,
-                        "account_id": v.account_id,
+                        "account_id": str(v.creator_id) if v.creator_id else "",
                         "publish_time": v.publish_time
                     }
                     for v in db_videos
@@ -158,7 +155,7 @@ def _update_video_metrics_in_db(video_id: str, latest_video):
     try:
         async def _update():
             async with db_manager.get_session() as session:
-                stmt = select(CollectedVideo).where(CollectedVideo.video_id == video_id)
+                stmt = select(Video).where(Video.video_id == video_id)
                 result = await session.execute(stmt)
                 db_video = result.scalar_one_or_none()
 
@@ -169,12 +166,6 @@ def _update_video_metrics_in_db(video_id: str, latest_video):
                         db_video.like_count = latest_video.metrics.like_count
                         db_video.comment_count = latest_video.metrics.comment_count
                         db_video.share_count = latest_video.metrics.share_count
-                        db_video.favorite_count = latest_video.metrics.favorite_count
-
-                        # 计算互动率
-                        if db_video.play_count and db_video.play_count > 0:
-                            total = (db_video.like_count or 0) + (db_video.comment_count or 0) + (db_video.share_count or 0)
-                            db_video.engagement_rate = total / db_video.play_count
 
                     await session.commit()
                     logger.debug(f"Updated metrics for video: {video_id}")

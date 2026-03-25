@@ -5,10 +5,12 @@ B站(Bilibili)平台数据适配器
 import os
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from loguru import logger
 
 from app.adapters.api.bilibili_api import BilibiliAPI
-from app.models import Video, Creator, VideoMetrics
+from app.schemas import Creator, Video, VideoMetrics
 from app.adapters.base import PlatformAdapter
+
 
 class BilibiliAdapter(PlatformAdapter):
     """
@@ -17,18 +19,18 @@ class BilibiliAdapter(PlatformAdapter):
     负责将B站API数据转换为统一的Video和Creator格式
     异步版本，支持WBI签名和Cookie认证
     """
-    
+
     PLATFORM_NAME = "bilibili"
-    
+
     def __init__(self, cookie: str):
         super().__init__()
         self.platform_name = self.PLATFORM_NAME
-        
+
         self.api = BilibiliAPI(
             timeout=30,
             cookie_file=cookie
         )
-    
+
     async def close(self):
         await self.api.close()
 
@@ -45,7 +47,7 @@ class BilibiliAdapter(PlatformAdapter):
         except Exception as e:
             logger.warning(f"获取视频分区列表失败: {e}")
             return []
-    
+
     async def get_trending_videos(self, category: Optional[str] = None, limit: int = 100) -> List[Video]:
         """
         获取热门视频列表
@@ -60,18 +62,18 @@ class BilibiliAdapter(PlatformAdapter):
             rid = 0  # 默认全站
             if category:
                 pass
-            
+
             # 调用排行榜API
             data = await self.api.get_ranking(rid=rid)
-            
+
             for item in data[:limit]:
                 videos.append(self._parse_video_data(item))
-                
+
         except Exception as e:
             logger.warning(f"获取热门视频失败: {e}")
-        
+
         return videos
-    
+
     async def search_videos(self, keyword: str, limit: int = 20) -> List[Video]:
         """搜索视频"""
         videos = []
@@ -81,7 +83,7 @@ class BilibiliAdapter(PlatformAdapter):
                 keyword=keyword,
                 page_size=limit
             )
-            
+
             result_list = data.get("result", [])
             for item in result_list:
                 # 搜索结果格式需要适配
@@ -91,12 +93,12 @@ class BilibiliAdapter(PlatformAdapter):
                     "face": item.get("face", "")
                 }
                 videos.append(self._parse_video_data(item))
-                
+
         except Exception as e:
             logger.warning(f"搜索视频失败: {e}")
-        
+
         return videos
-    
+
     async def search_creators(self, keyword: str, limit: int = 20) -> List[Creator]:
         """搜索创作者"""
         creators = []
@@ -106,7 +108,7 @@ class BilibiliAdapter(PlatformAdapter):
                 keyword=keyword,
                 page_size=limit
             )
-            
+
             result_list = data.get("result", [])
             for item in result_list:
                 # 转换为创作者格式
@@ -118,10 +120,10 @@ class BilibiliAdapter(PlatformAdapter):
                     description=item.get("usign", ""),
                     follower_count=item.get("fans", 0),
                 ))
-                
+
         except Exception as e:
             logger.warning(f"搜索创作者失败: {e}")
-        
+
         return creators
 
     async def get_creator_videos(self, creator_id: str, limit: int = 50) -> List[Video]:
@@ -131,6 +133,7 @@ class BilibiliAdapter(PlatformAdapter):
             mid = int(creator_id)
             # 获取用户视频列表
             data = await self.api.get_user_videos(mid=mid, ps=limit)
+
             list_data = data.get("archives", [])
 
             for item in list_data:
@@ -185,10 +188,10 @@ class BilibiliAdapter(PlatformAdapter):
             video = await self.get_video_detail(video_id)
             if not video:
                 return comments
-            
+
             data = await self.api.get_comments(oid=video.bvid, ps=limit)
             replies = data.get("replies", [])
-            
+
             for reply in replies:
                 comments.append({
                     "rpid": reply.get("rpid"),
@@ -198,10 +201,10 @@ class BilibiliAdapter(PlatformAdapter):
                     "like": reply.get("like", 0),
                     "ctime": reply.get("ctime"),
                 })
-                
+
         except Exception as e:
             logger.warning(f"获取评论失败: {e}")
-        
+
         return comments
 
     def _create_video_metrics(self, data: Dict[str, Any]) -> VideoMetrics:
@@ -216,9 +219,10 @@ class BilibiliAdapter(PlatformAdapter):
             coin_count = stat.get("coin", 0)
             share_count = stat.get("share", 0)
             like_count = stat.get("like", 0)
+            collect_count = stat.get("favorite", 0)
         else:
             view_count = danmaku_count = reply_count = 0
-            favorite_count = coin_count = share_count = like_count = 0
+            favorite_count = coin_count = share_count = like_count = collect_count = 0
 
         # 创建metrics对象
         metrics = VideoMetrics(
@@ -231,6 +235,7 @@ class BilibiliAdapter(PlatformAdapter):
             coin_count=coin_count,
             share_count=share_count,
             like_count=like_count,
+            collect_count=collect_count,
         )
         metrics.calculate_ratios()
 
@@ -282,6 +287,8 @@ class BilibiliAdapter(PlatformAdapter):
                 avatar_url=user_data.get("face", ""),
                 description=user_data.get("sign", ""),
                 follower_count=data.get("follower", 0),
+                following_count=card.get("attention", 0),
+                total_likes=data.get("like_num", 0),
                 video_count=data.get("archive_count", 0),
                 avg_play_count=(data.get("archive").get("view") // data.get("archive_count", 0)) if data.get(
                     "archive_count", 0) else 0,

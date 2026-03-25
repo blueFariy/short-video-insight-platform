@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from loguru import logger
 
-from app.models import Video, VideoMetrics, VideoMetricHistory, ViralSignal, Creator
+from app.schemas import Video, VideoMetrics, VideoMetricHistory, ViralSignal, Creator
 
 
 # ============== 各平台爆款阈值配置 ==============

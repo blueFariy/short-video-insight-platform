@@ -163,12 +163,15 @@ class KeyframeExtractor:
         ]
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            loop = asyncio.get_event_loop()
+            process = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
             )
-            await process.communicate()
 
             # 获取抽取的帧
             frames = []

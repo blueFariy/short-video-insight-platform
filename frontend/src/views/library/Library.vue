@@ -1,78 +1,202 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import service, { API_URL } from '@/api'
 
-interface Collection {
+const router = useRouter()
+
+interface Folder {
   id: string
-  title: string
-  type: 'video' | 'script' | 'structure' | 'hook'
-  content: string
-  tags: string[]
-  created_at: string
+  name: string
+  type: string
+  item_count: number
 }
 
-const collections = ref<Collection[]>([])
+interface FolderItem {
+  id: string
+  item_id: string
+  title: string
+  platform: string
+  item_type: string
+  creator_name: string
+  url: string
+  play_count: number
+  like_count: number
+  collect_count: number
+  comment_count: number
+  share_count: number
+  publish_time: string
+  notes: string
+  tags: string[]
+  created_at: string
+  is_analyzed: boolean
+}
+
+const folders = ref<Folder[]>([])
+const folderItems = ref<FolderItem[]>([])
 const loading = ref(false)
 const searchKeyword = ref('')
 const filterType = ref<string>('')
 
-const collectionTypes = [
-  { value: '', label: '全部' },
-  { value: 'video', label: '视频' },
-  { value: 'script', label: '脚本' },
-  { value: 'structure', label: '结构' },
-  { value: 'hook', label: '黄金3秒' }
-]
+// 当前视图：'folders' | 'items'
+const currentView = ref<string>('folders')
+const currentFolder = ref<Folder | null>(null)
 
-const fetchCollections = async () => {
+// 新建收藏夹对话框
+const dialogVisible = ref(false)
+const newFolderName = ref('')
+const newFolderType = ref('video')
+
+const handleCreateFolder = async () => {
+  if (!newFolderName.value.trim()) {
+    ElMessage.warning('请输入收藏夹名称')
+    return
+  }
+  try {
+    await service.post(API_URL.USER.COLLECTIONS, {
+      item_type: newFolderType.value,
+      item_id: '0',  // 使用字符串'0'表示创建文件夹
+      notes: newFolderName.value,
+      folder: newFolderName.value
+    } as any)
+    ElMessage.success('收藏夹创建成功')
+    dialogVisible.value = false
+    newFolderName.value = ''
+    fetchFolders()
+  } catch (error: any) {
+    console.error('Create folder error:', error)
+    ElMessage.error('创建失败')
+  }
+}
+
+// 获取收藏夹列表（文件夹）
+const fetchFolders = async () => {
   loading.value = true
   try {
-    const params: any = {}
-    if (searchKeyword.value) params.keyword = searchKeyword.value
-    if (filterType.value) params.type = filterType.value
+    // 使用专门的 folders API 获取收藏夹列表及统计
+    const res = await service.get(API_URL.USER.COLLECTION_FOLDERS) as any
+    // interceptor 已经提取了 data，所以 res 就是文件夹数组
+    const foldersData = res || []
 
-    collections.value = await service.get(API_URL.USER.COLLECTIONS, { params })
-  } catch (error) {
-    // Use demo data if API fails
-    collections.value = [
-      {
-        id: '1',
-        title: '如何用3句话留住用户',
-        type: 'hook',
-        content: '你是不是也有这样的困惑？为什么别人发视频随便都是几十万播放...',
-        tags: ['黄金3秒', '留人技巧'],
-        created_at: '2024-01-15'
-      },
-      {
-        id: '2',
-        title: '短视频脚本结构模板',
-        type: 'structure',
-        content: '开场(0-3秒) -> 痛点陈述(3-10秒) -> 解决方案(10-30秒) -> 行动号召(最后5秒)',
-        tags: ['脚本结构', '模板'],
-        created_at: '2024-01-14'
-      },
-      {
-        id: '3',
-        title: '职场干货类视频脚本',
-        type: 'script',
-        content: '今天来聊聊职场新人最容易犯的几个错误...',
-        tags: ['职场', '干货'],
-        created_at: '2024-01-13'
-      }
-    ]
+    // 直接使用 API 返回的文件夹列表（已包含统计信息）
+    folders.value = foldersData.map((f: any) => ({
+      id: f.name || '',
+      name: f.name || '未分类',
+      type: 'video',
+      item_count: f.count || 0
+    }))
+  } catch (error: any) {
+    console.error('Fetch folders error:', error)
   } finally {
     loading.value = false
   }
 }
 
+// 获取收藏夹内的项目
+const fetchFolderItems = async (folder: Folder) => {
+  loading.value = true
+  currentFolder.value = folder
+  currentView.value = 'items'
+  try {
+    const params: any = { page: 1, page_size: 100, folder: folder.name }
+    const res = await service.get(API_URL.USER.COLLECTIONS, { params }) as any
+    // After interceptor transforms response, items are at res.items directly
+    const items = res?.items || []
+
+    folderItems.value = items
+      .filter((item: any) => item.item_id !== "0" && item.item_id !== 0)
+      .map((item: any) => {
+        const videoInfo = item.video_info || {}
+        return {
+          id: String(item.id),
+          item_id: String(item.item_id),
+          title: videoInfo.title || item.notes || '未命名',
+          platform: videoInfo.platform || '',
+          item_type: item.item_type,
+          creator_name: videoInfo.creator_name || '',
+          url: videoInfo.url || '',
+          play_count: videoInfo.play_count || 0,
+          like_count: videoInfo.like_count || 0,
+          collect_count: videoInfo.collect_count || 0,
+          comment_count: videoInfo.comment_count || 0,
+          share_count: videoInfo.share_count || 0,
+          publish_time: videoInfo.publish_time ? videoInfo.publish_time.split('T')[0] : '',
+          notes: item.notes || '',
+          tags: item.tags || [],
+          created_at: item.created_at ? new Date(item.created_at).toLocaleDateString() : '',
+          is_analyzed: item.item_type === 'insight'
+        }
+      })
+  } catch (error: any) {
+    console.error('Fetch folder items error:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 返回文件夹列表
+const goBackToFolders = () => {
+  currentView.value = 'folders'
+  currentFolder.value = null
+  fetchFolders()
+}
+
+// 查看分析报告
+const viewAnalysis = (item: any) => {
+  // 跳转到分析页面，带上视频信息和insight数据
+  const params = new URLSearchParams()
+  if (item.url) params.set('url', encodeURIComponent(item.url))
+  if (item.platform) params.set('platform', item.platform)
+  if (item.item_id) params.set('item_id', item.item_id)
+  if (item.item_type) params.set('item_type', item.item_type)
+
+  // 如果有保存的insight数据，传递给分析页面
+  // 数据存储在notes字段中，是JSON格式
+  let insightData = null
+  if (item.notes) {
+    try {
+      const parsed = JSON.parse(item.notes)
+      // 兼容两种格式：直接是insight对象，或者嵌套在insight字段中
+      if (parsed.insight) {
+        insightData = parsed.insight
+      } else if (parsed.video && parsed.insight) {
+        // 另一种可能的格式
+        insightData = parsed
+      }
+    } catch (e) {
+      // notes不是JSON格式，可能是普通备注
+      console.log('Notes is not JSON format:', item.notes)
+    }
+  }
+
+  if (insightData) {
+    params.set('insight', encodeURIComponent(JSON.stringify(insightData)))
+  }
+
+  router.push(`/analysis?${params.toString()}`)
+}
+
+const collectionTypes = [
+  { value: '', label: '全部' },
+  { value: 'video', label: '视频' },
+  { value: 'script', label: '脚本' },
+  { value: 'insight', label: '洞察' },
+  { value: 'creator', label: '创作者' }
+]
+
 const handleDelete = async (id: string) => {
   try {
     await service.delete(API_URL.USER.DELETE_COLLECTION(id))
     ElMessage.success('删除成功')
-    fetchCollections()
-  } catch (error) {
-    ElMessage.error('删除失败')
+    if (currentFolder.value) {
+      fetchFolderItems(currentFolder.value)
+    } else {
+      fetchFolders()
+    }
+  } catch (error: any) {
+    console.error('Delete error:', error)
+    ElMessage.error(error.response?.data?.message || '删除失败')
   }
 }
 
@@ -80,14 +204,61 @@ const getTypeTag = (type: string) => {
   const map: Record<string, { type: string; label: string }> = {
     video: { type: 'primary', label: '视频' },
     script: { type: 'success', label: '脚本' },
-    structure: { type: 'warning', label: '结构' },
-    hook: { type: 'danger', label: '黄金3秒' }
+    insight: { type: 'warning', label: '洞察' },
+    creator: { type: 'danger', label: '创作者' }
   }
   return map[type] || { type: 'info', label: type }
 }
 
+// 格式化数字
+const formatNumber = (num: number) => {
+  if (num >= 100000000) {
+    return (num / 100000000).toFixed(1) + '亿'
+  } else if (num >= 10000) {
+    return (num / 10000).toFixed(1) + '万'
+  }
+  return num.toString()
+}
+
+// 获取平台标签
+const getPlatformTag = (platform: string) => {
+  const map: Record<string, { type: string; label: string }> = {
+    douyin: { type: 'danger', label: '抖音' },
+    bilibili: { type: 'primary', label: 'B站' },
+    xiaohongshu: { type: 'warning', label: '小红书' },
+    kuaishou: { type: 'success', label: '快手' }
+  }
+  return map[platform] || { type: 'info', label: platform }
+}
+
+// 跳转到视频链接
+const goToVideo = (item: any) => {
+  if (item.url) {
+    window.open(item.url, '_blank')
+  }
+}
+
+// 跳转到创作者主页
+const goToCreator = (item: any) => {
+  if (!item.platform || !item.creator_name) return
+  let url = ''
+  if (item.platform === 'bilibili') {
+    // B站创作者主页需要通过搜索跳转
+    url = `https://space.bilibili.com/?${encodeURIComponent(item.creator_name)}`
+  } else if (item.platform === 'douyin') {
+    url = `https://www.douyin.com/user/${encodeURIComponent(item.creator_name)}`
+  } else if (item.platform === 'xiaohongshu') {
+    url = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(item.creator_name)}`
+  } else if (item.platform === 'kuaishou') {
+    url = `https://www.kuaishou.com/search/${encodeURIComponent(item.creator_name)}`
+  }
+  if (url) {
+    window.open(url, '_blank')
+  }
+}
+
 onMounted(() => {
-  fetchCollections()
+  fetchFolders()
 })
 </script>
 
@@ -96,11 +267,20 @@ onMounted(() => {
     <!-- Header -->
     <div class="page-header">
       <h1>素材库</h1>
-      <p class="subtitle">收藏的黄金3秒、脚本结构等优质内容</p>
+      <p class="subtitle">收藏的视频、脚本、洞察等优质内容</p>
     </div>
 
-    <!-- Filters -->
-    <el-card class="filter-card">
+    <!-- Back button when viewing items -->
+    <div v-if="currentView === 'items'" class="back-header">
+      <el-button @click="goBackToFolders">
+        ← 返回收藏夹列表
+      </el-button>
+      <span class="folder-title">{{ currentFolder?.name }}</span>
+      <span class="item-count">({{ folderItems.length }} 个项目)</span>
+    </div>
+
+    <!-- Filters (only show in folders view) -->
+    <el-card class="filter-card" v-if="currentView === 'folders'">
       <el-row :gutter="20">
         <el-col :span="8">
           <el-input
@@ -108,11 +288,11 @@ onMounted(() => {
             placeholder="搜索素材..."
             prefix-icon="Search"
             clearable
-            @change="fetchCollections"
+            @change="fetchFolders"
           />
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filterType" placeholder="素材类型" clearable @change="fetchCollections">
+          <el-select v-model="filterType" placeholder="素材类型" clearable @change="fetchFolders">
             <el-option
               v-for="item in collectionTypes"
               :key="item.value"
@@ -122,45 +302,122 @@ onMounted(() => {
           </el-select>
         </el-col>
         <el-col :span="10">
-          <el-button type="primary" icon="Plus">新建收藏夹</el-button>
+          <el-button type="primary" icon="Plus" @click="dialogVisible = true">新建收藏夹</el-button>
         </el-col>
       </el-row>
     </el-card>
 
-    <!-- Collection List -->
-    <el-row :gutter="20" v-loading="loading">
-      <el-col :span="8" v-for="item in collections" :key="item.id">
-        <el-card class="collection-card">
-          <div class="card-header">
-            <el-tag :type="getTypeTag(item.type).type" size="small">
-              {{ getTypeTag(item.type).label }}
+    <!-- Folders View -->
+    <div v-if="currentView === 'folders'">
+      <el-row :gutter="20" v-loading="loading">
+        <el-col :span="8" v-for="folder in folders" :key="folder.id">
+          <el-card class="folder-card" @click="fetchFolderItems(folder)">
+            <div class="folder-icon">📁</div>
+            <h3 class="folder-name">{{ folder.name }}</h3>
+            <p class="folder-count">{{ folder.item_count }} 个项目</p>
+            <el-tag :type="getTypeTag(folder.type).type" size="small">
+              {{ getTypeTag(folder.type).label }}
             </el-tag>
-            <el-dropdown>
-              <el-button text icon="More" />
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item>编辑</el-dropdown-item>
-                  <el-dropdown-item @click="handleDelete(item.id)">删除</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </div>
-          <h3 class="title">{{ item.title }}</h3>
-          <p class="content">{{ item.content }}</p>
-          <div class="tags">
-            <el-tag v-for="tag in item.tags" :key="tag" size="small" type="info">
-              {{ tag }}
-            </el-tag>
-          </div>
-          <div class="footer">
-            <span class="date">{{ item.created_at }}</span>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+          </el-card>
+        </el-col>
+      </el-row>
+      <el-empty v-if="!loading && folders.length === 0" description="暂无收藏夹，请先创建收藏夹" />
+    </div>
 
-    <!-- Empty State -->
-    <el-empty v-if="!loading && collections.length === 0" description="暂无收藏内容" />
+    <!-- Folder Items View -->
+    <div v-if="currentView === 'items'">
+      <el-table :data="folderItems" v-loading="loading" stripe>
+        <el-table-column prop="title" label="名称" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <a href="javascript:void(0)" @click="goToVideo(row)" style="color: #409eff; cursor: pointer;">
+              {{ row.title }}
+            </a>
+          </template>
+        </el-table-column>
+        <el-table-column prop="platform" label="平台" width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.platform" :type="getPlatformTag(row.platform).type" size="small">
+              {{ getPlatformTag(row.platform).label }}
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="item_type" label="类型" width="80">
+          <template #default="{ row }">
+            <el-tag :type="getTypeTag(row.item_type).type" size="small">
+              {{ getTypeTag(row.item_type).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="creator_name" label="创作者" width="120">
+          <template #default="{ row }">
+            <a v-if="row.creator_name" href="javascript:void(0)" @click="goToCreator(row)" style="color: #409eff; cursor: pointer;">
+              {{ row.creator_name }}
+            </a>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="play_count" label="播放量" width="90">
+          <template #default="{ row }">
+            {{ formatNumber(row.play_count) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="like_count" label="点赞数" width="90">
+          <template #default="{ row }">
+            {{ formatNumber(row.like_count) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="comment_count" label="评论数" width="90">
+          <template #default="{ row }">
+            {{ formatNumber(row.comment_count) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="publish_time" label="发布时间" width="100" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_analysis" type="success" size="small">已分析</el-tag>
+            <el-tag v-else type="info" size="small">未分析</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="160">
+          <template #default="{ row }">
+            <div style="display: flex; gap: 4px;">
+              <el-button v-if="row.is_analyzed" size="small" type="primary" @click="viewAnalysis(row)">
+                查看
+              </el-button>
+              <el-button v-else size="small" type="primary" @click="viewAnalysis(row)">
+                分析
+              </el-button>
+              <el-button size="small" type="danger" @click="handleDelete(row.id)">
+                删除
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!loading && folderItems.length === 0" description="该收藏夹暂无内容" />
+    </div>
+
+    <!-- 新建收藏夹对话框 -->
+    <el-dialog v-model="dialogVisible" title="新建收藏夹" width="400px">
+      <el-form label-width="80px">
+        <el-form-item label="收藏夹名称">
+          <el-input v-model="newFolderName" placeholder="请输入收藏夹名称" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="newFolderType" style="width: 100%">
+            <el-option value="video" label="视频" />
+            <el-option value="script" label="脚本" />
+            <el-option value="insight" label="洞察" />
+            <el-option value="creator" label="创作者" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleCreateFolder">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -184,6 +441,50 @@ onMounted(() => {
 
 .filter-card {
   margin-bottom: 20px;
+}
+
+.back-header {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+
+  .folder-title {
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .item-count {
+    color: #666;
+  }
+}
+
+.folder-card {
+  margin-bottom: 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-align: center;
+  padding: 20px;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  }
+
+  .folder-icon {
+    font-size: 48px;
+    margin-bottom: 10px;
+  }
+
+  .folder-name {
+    font-size: 16px;
+    margin: 10px 0 5px;
+  }
+
+  .folder-count {
+    color: #666;
+    margin-bottom: 10px;
+  }
 }
 
 .collection-card {

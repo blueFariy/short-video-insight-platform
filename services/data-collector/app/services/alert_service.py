@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from loguru import logger
 from dataclasses import dataclass
 
-from app.models import Video, ViralSignal
+from app.schemas import Video, ViralSignal
 from app.core.config import settings
 
 

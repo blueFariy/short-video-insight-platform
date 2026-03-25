@@ -27,6 +27,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '数据采集' }
   },
   {
+    path: '/collector/manual',
+    name: 'ManualCollect',
+    component: () => import('@/views/collector/ManualCollect.vue'),
+    meta: { title: '手动采集' }
+  },
+  {
     path: '/monitor',
     name: 'Monitor',
     component: () => import('@/views/monitor/Monitor.vue'),
@@ -43,6 +49,12 @@ const routes: RouteRecordRaw[] = [
     name: 'Login',
     component: () => import('@/views/Login.vue'),
     meta: { title: '登录' }
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/Register.vue'),
+    meta: { title: '注册' }
   }
 ]
 

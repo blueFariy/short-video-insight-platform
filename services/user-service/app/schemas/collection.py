@@ -2,8 +2,8 @@
 Collection Schemas
 """
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List, Union
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 # ============ Request Schemas ============
@@ -11,18 +11,32 @@ from pydantic import BaseModel, Field, ConfigDict
 class CollectionCreateRequest(BaseModel):
     """创建收藏请求"""
     item_type: str = Field(..., description="收藏类型: video, script, insight, creator")
-    item_id: int = Field(..., description="收藏项ID")
+    item_id: Union[int, str] = Field(..., description="收藏项ID (支持数字或字符串如B站BV号)")
     notes: Optional[str] = Field(None, description="备注")
     tags: Optional[List[str]] = Field(None, description="标签")
     folder: Optional[str] = Field(None, max_length=100, description="收藏夹")
+
+    @field_validator('item_id', mode='before')
+    @classmethod
+    def convert_item_id_to_string(cls, v):
+        """确保item_id始终转换为字符串"""
+        return str(v) if v is not None else v
 
 
 class CollectionUpdateRequest(BaseModel):
     """更新收藏请求"""
+    item_type: Optional[str] = Field(None, description="收藏类型: video, script, insight, creator")
+    item_id: Optional[Union[int, str]] = Field(None, description="收藏项ID")
     notes: Optional[str] = Field(None, description="备注")
     tags: Optional[List[str]] = Field(None, description="标签")
     folder: Optional[str] = Field(None, max_length=100, description="收藏夹")
-    is_favorite: Optional[bool] = Field(None, description="是否标星")
+    is_analysis: Optional[bool] = Field(None, description="是否已分析")
+
+    @field_validator('item_id', mode='before')
+    @classmethod
+    def convert_item_id_to_string(cls, v):
+        """确保item_id始终转换为字符串"""
+        return str(v) if v is not None else v
 
 
 class CollectionBatchDeleteRequest(BaseModel):
@@ -43,11 +57,11 @@ class CollectionResponse(BaseModel):
     id: int
     user_id: int
     item_type: str
-    item_id: int
+    item_id: Union[int, str]
     notes: Optional[str] = None
     tags: Optional[List[str]] = None
     folder: Optional[str] = None
-    is_favorite: bool
+    is_analysis: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -58,15 +72,14 @@ class CollectionDetailResponse(BaseModel):
     id: int
     user_id: int
     item_type: str
-    item_id: int
+    item_id: Union[int, str]
     notes: Optional[str] = None
     tags: Optional[List[str]] = None
     folder: Optional[str] = None
-    is_favorite: bool
+    is_analysis: bool
     created_at: datetime
     # 关联信息
     video_info: Optional[dict] = None
-    creator_info: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,12 +88,14 @@ class CollectionListResponse(BaseModel):
     """收藏列表响应"""
     id: int
     item_type: str
-    item_id: int
+    item_id: Union[int, str]
     notes: Optional[str] = None
     tags: Optional[List[str]] = None
     folder: Optional[str] = None
-    is_favorite: bool
+    is_analysis: bool
     created_at: datetime
+    # 关联的视频信息
+    video_info: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
