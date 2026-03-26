@@ -23,6 +23,7 @@ celery_app = Celery(
         'app.tasks.video_update',
         'app.tasks.report_generator',
         'app.tasks.douyin_collector',
+        'app.tasks.viral_radar',
     ]
 )
 
@@ -44,7 +45,14 @@ celery_app.conf.update(
 
     # Beat schedule
     beat_schedule={
-        # 1. 高频热点扫描（每30分钟）
+        # 1. 爆款雷达扫描（每15分钟）- 核心功能
+        'viral-radar-scan': {
+            'task': 'app.tasks.viral_radar.scan_and_detect_viral',
+            'schedule': crontab(minute='*/15'),
+            'options': {'queue': 'viral_radar'}
+        },
+
+        # 2. 高频热点扫描（每30分钟）
         'scan-all-hot-trends': {
             'task': 'app.tasks.hot_scan.scan_all_platforms',
             'schedule': crontab(minute='*/30'),
@@ -102,6 +110,7 @@ if __name__ == '__main__':
     # celery -A app.celery_app worker --loglevel=info --pool=solo
     # celery -A app.celery_app beat --loglevel=info
     # celery -A app.celery_app call app.tasks.hot_scan.scan_all_platforms
-    # set FLOWER_UNAUTHENTICATED_API=true && celery -A app.celery_app flower --port=5556
     # celery -A app.celery_app purge -f
+    # docker exec short-video-data-collector cat /var/log/supervisor/celery-beat_error.log
+    # docker exec short-video-data-collector cat /var/log/supervisor/celery-worker_error.log
     celery_app.start()

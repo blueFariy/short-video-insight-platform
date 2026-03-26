@@ -2,9 +2,17 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import service, { API_URL } from '@/api'
+import service, { insightService, API_URL } from '@/api'
 
 const router = useRouter()
+
+// 处理封面URL，解决B站图片403问题
+const getCoverUrl = (coverUrl: string): string => {
+  if (coverUrl && coverUrl.includes('hdslb.com')) {
+    return `${API_URL.COLLECTOR.IMAGE_PROXY}?url=${encodeURIComponent(coverUrl)}`
+  }
+  return coverUrl
+}
 
 interface Folder {
   id: string
@@ -125,7 +133,7 @@ const fetchFolderItems = async (folder: Folder) => {
           notes: item.notes || '',
           tags: item.tags || [],
           created_at: item.created_at ? new Date(item.created_at).toLocaleDateString() : '',
-          is_analyzed: item.item_type === 'insight'
+          is_analysis: videoInfo.is_analysis || item.item_type === 'insight'
         }
       })
   } catch (error: any) {
@@ -143,8 +151,93 @@ const goBackToFolders = () => {
 }
 
 // 查看分析报告
-const viewAnalysis = (item: any) => {
-  // 跳转到分析页面，带上视频信息和insight数据
+const viewAnalysis = async (item: any) => {
+  // 如果已分析，从后端获取分析数据
+  if (item.is_analysis && item.item_id) {
+    try {
+      // item_id 是视频的原始ID (platform_video_id)
+      // 需要先查找 videos 表获取视频主键ID，再获取 insight
+      // 但更简单的是直接通过 item.item_id 在视频信息中查找
+      // 让我们通过获取所有历史记录并筛选
+
+      // 直接尝试获取视频的 insight 详情
+      // 由于不知道视频的内部ID，我们使用通用查询
+      const res = await insightService.get(API_URL.INSIGHT.VIDEO_INSIGHT_ALL, {
+        params: { page: 1, page_size: 100 }
+      }) as any
+
+      if (res?.items && res.items.length > 0) {
+        // 查找匹配的视频（通过对比标题或URL）
+        const matchedItem = res.items.find((i: any) => {
+          const vi = i.video_info || {}
+          // 通过URL或标题匹配
+          return vi.url === item.url || vi.title === item.title
+        })
+
+        if (matchedItem) {
+          const insightItem = matchedItem
+          // 使用后端返回的insight数据构建URL参数
+          const params = new URLSearchParams()
+
+          // 添加视频信息
+          if (item.url) params.set('url', encodeURIComponent(item.url))
+          if (item.platform) params.set('platform', item.platform)
+          if (item.item_id) params.set('item_id', item.item_id)
+
+          // 构建insight数据
+          const videoInfo = insightItem.video_info || {}
+
+          // 计算综合评分
+          let overallScore = insightItem.overall_score || 0
+          if (!overallScore) {
+            const dimensions = insightItem.viral_factors || {}
+            const scoreValues: number[] = Object.entries(dimensions)
+              .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
+              .map(([, v]) => v as number)
+            if (scoreValues.length > 0) {
+              overallScore = Math.round(scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length)
+            }
+          }
+
+          const insightData: any = {
+            video: {
+              title: videoInfo.title || item.title,
+              cover: getCoverUrl(videoInfo.cover_url || ''),
+              platform: videoInfo.platform || item.platform || '',
+              url: videoInfo.url || item.url || '',
+              stats: {
+                views: videoInfo.play_count || 0,
+                likes: videoInfo.like_count || 0,
+                comments: videoInfo.comment_count || 0
+              }
+            },
+            insight: {
+              overall: {
+                summary: insightItem.ai_summary || '',
+                highlights: insightItem.keywords || [],
+                dimensions: insightItem.viral_factors || {},
+                improvements: insightItem.improvements || [],
+                overall_score: overallScore
+              },
+              hook: insightItem.hook_3s ? {
+                hook_text: insightItem.hook_3s,
+                hook_type: insightItem.hook_type || ''
+              } : null,
+              structure: insightItem.structure_analysis || (insightItem.structure_type ? { type: insightItem.structure_type } : null)
+            }
+          }
+
+          params.set('insight', encodeURIComponent(JSON.stringify(insightData)))
+          router.push(`/analysis?${params.toString()}`)
+          return
+        }
+      }
+    } catch (error) {
+      console.error('获取分析数据失败:', error)
+    }
+  }
+
+  // 如果没有分析或获取失败，回退到原来的逻辑
   const params = new URLSearchParams()
   if (item.url) params.set('url', encodeURIComponent(item.url))
   if (item.platform) params.set('platform', item.platform)
@@ -382,7 +475,7 @@ onMounted(() => {
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <div style="display: flex; gap: 4px;">
-              <el-button v-if="row.is_analyzed" size="small" type="primary" @click="viewAnalysis(row)">
+              <el-button v-if="row.is_analysis" size="small" type="primary" @click="viewAnalysis(row)">
                 查看
               </el-button>
               <el-button v-else size="small" type="primary" @click="viewAnalysis(row)">

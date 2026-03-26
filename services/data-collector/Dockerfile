@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -18,6 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app /app/app
 
+# Copy supervisor config
+COPY supervisor.conf /etc/supervisor/conf.d/supervisor.conf
+
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
@@ -25,5 +29,5 @@ ENV PYTHONUNBUFFERED=1
 # Expose port
 EXPOSE 8004
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004"]
+# Run the application with supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisor.conf"]

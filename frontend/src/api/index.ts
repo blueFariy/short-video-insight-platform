@@ -221,8 +221,23 @@ export const API_URL = {
         BILIBILI_CREATOR_COLLECT: (id: string) => `${COLLECTOR_BASE_URL}/api/v1/collector/bilibili/creator/collect?creator_id=${id}`,
         SCHEDULER_STATUS: `${COLLECTOR_BASE_URL}/api/v1/collector/scheduler/status`,
         SCHEDULER_RUN_TASK: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/collector/scheduler/tasks/${taskId}/run`,
+        // 定时任务管理 (新接口)
+        SCHEDULER_TASKS: `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks`,
+        SCHEDULER_TASK_DETAIL: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}`,
+        SCHEDULER_TASK_CREATE: `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks`,
+        SCHEDULER_TASK_UPDATE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}`,
+        SCHEDULER_TASK_DELETE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}`,
+        SCHEDULER_TASK_ENABLE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}/enable`,
+        SCHEDULER_TASK_DISABLE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}/disable`,
+        SCHEDULER_TASK_TRIGGER: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}/trigger`,
+        SCHEDULER_TASK_DEFINITIONS: `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/definitions`,
+        // 爆款视频
+        VIRAL_VIDEOS: `${COLLECTOR_BASE_URL}/api/v1/collector/videos/viral`,
         // 图片代理 - 解决B站图片403问题
-        IMAGE_PROXY: `${COLLECTOR_BASE_URL}/api/v1/collector/proxy/image`
+        IMAGE_PROXY: `${COLLECTOR_BASE_URL}/api/v1/collector/proxy/image`,
+        // 用户兴趣配置
+        USER_INTEREST_GET: `${COLLECTOR_BASE_URL}/api/v1/collector/user/interest`,
+        USER_INTEREST_UPDATE: `${COLLECTOR_BASE_URL}/api/v1/collector/user/interest`
     },
 
     // Competitor Monitor (port 8005)

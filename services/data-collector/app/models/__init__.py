@@ -145,8 +145,15 @@ db_manager = DatabaseManager()
 
 from app.models.creator import Creator
 from app.models.video import Video
+from app.models.viral_alert import VideoMetricSnapshot, UserInterest, ViralAlert, CategoryBenchmark
+from app.models.scheduled_task import ScheduledTask
 
 __all__ = [
     'Creator',
     'Video',
+    'VideoMetricSnapshot',
+    'UserInterest',
+    'ViralAlert',
+    'CategoryBenchmark',
+    'ScheduledTask',
 ]

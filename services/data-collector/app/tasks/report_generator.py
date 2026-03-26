@@ -8,7 +8,7 @@ from loguru import logger
 from datetime import datetime, timedelta
 from sqlalchemy import select, func
 
-from app.core.database import db_manager, Video, Creator
+from app.models import db_manager, Video, Creator
 
 
 @shared_task(bind=True, max_retries=1)

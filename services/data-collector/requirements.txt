@@ -6,6 +6,8 @@ pydantic-settings>=2.1.0
 loguru>=0.7.2
 aiohttp>=3.9.0
 python-dotenv>=1.0.0
+python-jose[cryptography]>=3.3.0  # For JWT token decoding
+python-multipart>=0.0.6  # For form data
 
 httpx==0.28.1
 

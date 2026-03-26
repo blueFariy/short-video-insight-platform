@@ -1,28 +1,58 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { collectorService, API_URL } from '@/api'
 
 const router = useRouter()
 
-// Placeholder data
+// 今日洞察
 const todayInsights = ref([
   { id: 1, type: 'warning', title: '美妆领域有1个话题正在起势', time: '10:30' },
   { id: 2, type: 'info', title: '您关注的达人发布了新视频', time: '09:15' }
 ])
 
-const recentVideos = ref([
-  { id: '1', title: '如何用3句话留住用户', views: 125000, likes: 8500 },
-  { id: '2', title: '爆款视频的黄金3秒法则', views: 98000, likes: 6200 }
-])
+// 热门爆款视频
+const viralVideos = ref<any[]>([])
 
+// 竞品动态
 const competitors = ref([
   { id: 1, name: '美妆博主A', followers: '120W', latestVideo: '护肤教程', trend: 'up' },
   { id: 2, name: '剧情号B', followers: '85W', latestVideo: '反转剧情', trend: 'up' }
 ])
 
-const handleAnalyze = (videoId: string) => {
-  router.push(`/analysis?id=${videoId}`)
+// 获取爆款视频列表
+const fetchViralVideos = async () => {
+  try {
+    const res = await collectorService.get(API_URL.COLLECTOR.VIRAL_VIDEOS, {
+      params: { limit: 3, min_play_count: 100000 }
+    }) as any
+    viralVideos.value = res.videos || []
+  } catch (error) {
+    console.error('获取爆款视频失败:', error)
+    // 使用备用数据
+    viralVideos.value = []
+  }
+}
+
+// 点击视频跳转到平台
+const handleVideoClick = (video: any) => {
+  if (video.video_url) {
+    window.open(video.video_url, '_blank')
+  }
+}
+
+// 点击分析按钮，跳转到AI分析页面
+const handleAnalyze = (video: any) => {
+  const params = new URLSearchParams()
+  params.set('platform', video.platform || '')
+  params.set('url', video.video_url || '')
+  router.push(`/analysis?${params.toString()}`)
+}
+
+// 查看更多跳转到数据采集的视频库
+const goToCollector = () => {
+  router.push('/collector')
 }
 
 const goToMonitor = () => {
@@ -32,6 +62,29 @@ const goToMonitor = () => {
 const goToLibrary = () => {
   ElMessage.info('素材库功能开发中')
 }
+
+// 平台标签
+const getPlatformTag = (platform: string) => {
+  const map: Record<string, { label: string; type: string }> = {
+    douyin: { label: '抖音', type: 'danger' },
+    bilibili: { label: 'B站', type: 'warning' },
+    xiaohongshu: { label: '小红书', type: 'success' },
+    kuaishou: { label: '快手', type: 'info' }
+  }
+  return map[platform] || { label: platform, type: 'info' }
+}
+
+// 格式化数字
+const formatNumber = (num: number) => {
+  if (!num) return '0'
+  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
+  if (num >= 1000) return (num / 1000).toFixed(1) + '千'
+  return num.toString()
+}
+
+onMounted(() => {
+  fetchViralVideos()
+})
 </script>
 
 <template>
@@ -101,16 +154,24 @@ const goToLibrary = () => {
           <template #header>
             <div class="card-header">
               <span>热门爆款参考</span>
-              <el-button type="primary" link>查看更多</el-button>
+              <el-button type="primary" link @click="goToCollector">查看更多</el-button>
             </div>
           </template>
-          <div class="video-list">
-            <div v-for="video in recentVideos" :key="video.id" class="video-item" @click="handleAnalyze(video.id)">
-              <div class="video-info">
+          <div v-if="viralVideos.length === 0" class="empty-tip">
+            暂无爆款视频数据，请先采集视频数据
+          </div>
+          <div v-else class="video-list">
+            <div v-for="video in viralVideos" :key="video.id" class="video-item">
+              <div class="video-info" @click="handleVideoClick(video)">
                 <h4>{{ video.title }}</h4>
-                <p>播放: {{ (video.views / 10000).toFixed(1) }}万 | 点赞: {{ (video.likes / 10000).toFixed(1) }}万</p>
+                <p>
+                  <el-tag :type="getPlatformTag(video.platform).type" size="small">
+                    {{ getPlatformTag(video.platform).label }}
+                  </el-tag>
+                  播放: {{ formatNumber(video.play_count) }} | 点赞: {{ formatNumber(video.like_count) }}
+                </p>
               </div>
-              <el-button type="primary" size="small">分析</el-button>
+              <el-button type="primary" size="small" @click="handleAnalyze(video)">分析</el-button>
             </div>
           </div>
         </el-card>

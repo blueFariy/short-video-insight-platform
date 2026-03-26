@@ -173,3 +173,116 @@ CREATE TABLE IF NOT EXISTS trend_reports (
 
 CREATE INDEX IF NOT EXISTS idx_trend_reports_period ON trend_reports(period_start, period_end);
 CREATE INDEX IF NOT EXISTS idx_trend_reports_type ON trend_reports(report_type);
+
+-- ===========================================
+-- 爆款雷达相关表 (新增)
+-- ===========================================
+
+-- Video Metric Snapshots - 视频指标时序快照
+CREATE TABLE IF NOT EXISTS video_metric_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    video_id VARCHAR(100) NOT NULL,
+    platform VARCHAR(20) NOT NULL,
+    play_count BIGINT DEFAULT 0,
+    like_count BIGINT DEFAULT 0,
+    comment_count BIGINT DEFAULT 0,
+    share_count BIGINT DEFAULT 0,
+    danmaku_count BIGINT DEFAULT 0,
+    coin_count BIGINT DEFAULT 0,
+    collect_count BIGINT DEFAULT 0,
+    engagement_rate FLOAT DEFAULT 0.0,
+    like_ratio FLOAT DEFAULT 0.0,
+    comment_ratio FLOAT DEFAULT 0.0,
+    share_ratio FLOAT DEFAULT 0.0,
+    play_growth_rate FLOAT DEFAULT 0.0,
+    like_growth_rate FLOAT DEFAULT 0.0,
+    comment_growth_rate FLOAT DEFAULT 0.0,
+    snapshot_time TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_video ON video_metric_snapshots(video_id);
+CREATE INDEX IF NOT EXISTS idx_snapshots_time ON video_metric_snapshots(snapshot_time);
+CREATE INDEX IF NOT EXISTS idx_snapshot_video_time ON video_metric_snapshots(video_id, snapshot_time);
+
+-- User Interests - 用户兴趣配置
+CREATE TABLE IF NOT EXISTS user_interests (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE,
+    category_weights JSONB DEFAULT '{}',
+    interest_keywords TEXT[],
+    platforms TEXT[] DEFAULT ARRAY['douyin', 'bilibili', 'xiaohongshu'],
+    alert_levels TEXT[] DEFAULT ARRAY['yellow', 'orange', 'red'],
+    notification_channels TEXT[] DEFAULT ARRAY['app'],
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_interests_user ON user_interests(user_id);
+
+-- Viral Alerts - 爆款预警记录
+CREATE TABLE IF NOT EXISTS viral_alerts (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    video_id VARCHAR(100) NOT NULL,
+    platform VARCHAR(20),
+    title VARCHAR(500),
+    cover_url TEXT,
+    video_url TEXT,
+    alert_level VARCHAR(20) NOT NULL,
+    growth_stage VARCHAR(20),
+    growth_rate FLOAT,
+    growth_score FLOAT,
+    authenticity FLOAT,
+    message TEXT,
+    factors JSONB,
+    is_read BOOLEAN DEFAULT FALSE,
+    is_dismissed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_viral_alerts_user ON viral_alerts(user_id);
+CREATE INDEX IF NOT EXISTS idx_viral_alerts_video ON viral_alerts(video_id);
+CREATE INDEX IF NOT EXISTS idx_alert_user_read ON viral_alerts(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_alert_user_time ON viral_alerts(user_id, created_at);
+
+-- Category Benchmarks - 分类基准数据
+CREATE TABLE IF NOT EXISTS category_benchmarks (
+    id BIGSERIAL PRIMARY KEY,
+    platform VARCHAR(20) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    avg_play_count BIGINT DEFAULT 0,
+    avg_engagement_rate FLOAT DEFAULT 0.0,
+    avg_like_ratio FLOAT DEFAULT 0.0,
+    viral_threshold_play BIGINT DEFAULT 100000,
+    viral_threshold_growth FLOAT DEFAULT 0.5,
+    period_start TIMESTAMPTZ,
+    period_end TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(platform, category)
+);
+
+CREATE INDEX IF NOT EXISTS idx_benchmark_platform_cat ON category_benchmarks(platform, category);
+
+-- ===========================================
+-- 定时任务管理表 (新增)
+-- ===========================================
+
+-- Scheduled Tasks - 定时任务配置
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    task_id VARCHAR(100) PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    celery_task_name VARCHAR(200) NOT NULL,
+    task_params TEXT,
+    interval_seconds INTEGER NOT NULL DEFAULT 3600,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_run TIMESTAMPTZ,
+    next_run TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks(enabled);
+CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run);

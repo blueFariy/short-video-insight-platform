@@ -51,11 +51,16 @@ const fetchAnalysisHistory = async () => {
       .map((item: any) => {
         // 优先使用后端返回的 video_info
         const videoInfo = item.video_info || {}
+        // 处理封面URL，解决B站图片403问题
+        let coverUrl = videoInfo.cover_url || ''
+        if (coverUrl && coverUrl.includes('hdslb.com')) {
+          coverUrl = `${API_URL.COLLECTOR.IMAGE_PROXY}?url=${encodeURIComponent(coverUrl)}`
+        }
         // 构建insight数据用于查看
         const insightData = {
           video: {
             title: videoInfo.title || item.ai_summary?.substring(0, 30) || '分析报告',
-            cover: videoInfo.cover_url || '',
+            cover: coverUrl,
             platform: videoInfo.platform || '',
             url: videoInfo.url || '',
             stats: {
@@ -78,18 +83,31 @@ const fetchAnalysisHistory = async () => {
             structure: item.structure_analysis || (item.structure_type ? { type: item.structure_type } : null)
           }
         }
+        // 直接使用后端返回的综合评分，或者前端计算
+        let overallScore = item.overall_score || 0
+        if (!overallScore) {
+          const dimensions = item.viral_factors || {}
+          if (dimensions) {
+            const scoreValues: number[] = Object.entries(dimensions)
+              .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
+              .map(([, v]) => v as number)
+            if (scoreValues.length > 0) {
+              overallScore = Math.round(scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length)
+            }
+          }
+        }
         return {
           id: item.id,
           video_id: item.video_id,
           title: videoInfo.title || item.ai_summary?.substring(0, 30) || '分析报告',
           platform: videoInfo.platform || '',
-          cover: videoInfo.cover_url || '',
+          cover: coverUrl,
           stats: {
             views: videoInfo.play_count || 0,
             likes: videoInfo.like_count || 0,
             comments: videoInfo.comment_count || 0
           },
-          overall_score: item.overall_score || 0,
+          overall_score: overallScore,
           insight: insightData,
           video: videoInfo,
           created_at: item.created_at
@@ -124,11 +142,27 @@ const viewFromHistory = async (item: any) => {
 
     if (res) {
       const videoInfo = res.video_info || {}
+      // 处理封面URL，解决B站图片403问题
+      let coverUrl = videoInfo.cover_url || ''
+      if (coverUrl && coverUrl.includes('hdslb.com')) {
+        coverUrl = `${API_URL.COLLECTOR.IMAGE_PROXY}?url=${encodeURIComponent(coverUrl)}`
+      }
+      // 计算综合评分
+      let overallScore = res.overall_score || 0
+      if (!overallScore) {
+        const dimensions = res.viral_factors || {}
+        const scoreValues: number[] = Object.entries(dimensions)
+          .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
+          .map(([, v]) => v as number)
+        if (scoreValues.length > 0) {
+          overallScore = Math.round(scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length)
+        }
+      }
       // 构建完整的分析结果
       analysisResult.value = {
         video: {
           title: videoInfo.title || res.ai_summary?.substring(0, 30) || '分析报告',
-          cover: videoInfo.cover_url || '',
+          cover: coverUrl,
           platform: videoInfo.platform || '',
           url: videoInfo.url || '',
           stats: {
@@ -142,7 +176,8 @@ const viewFromHistory = async (item: any) => {
             summary: res.ai_summary || '',
             highlights: res.keywords || [],
             dimensions: res.viral_factors || {},
-            improvements: res.improvements || []
+            improvements: res.improvements || [],
+            overall_score: overallScore
           },
           hook: res.hook_3s ? {
             hook_text: res.hook_3s,
@@ -238,6 +273,18 @@ const handleAnalyze = async () => {
       coverUrl = `${API_URL.COLLECTOR.IMAGE_PROXY}?url=${encodeURIComponent(coverUrl)}`
     }
 
+    // 计算综合评分
+    let overallScore = insightData?.overall?.overall_score || 0
+    if (!overallScore && insightData?.overall?.dimensions) {
+      const dimensions = insightData.overall.dimensions
+      const scoreValues: number[] = Object.entries(dimensions)
+        .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
+        .map(([, v]) => v as number)
+      if (scoreValues.length > 0) {
+        overallScore = Math.round(scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length)
+      }
+    }
+
     analysisResult.value = {
       video: {
         title: videoData.title,
@@ -251,7 +298,13 @@ const handleAnalyze = async () => {
           comments: videoData.comment_count || videoData.comments || 0
         }
       },
-      insight: insightData
+      insight: {
+        ...insightData,
+        overall: {
+          ...insightData.overall,
+          overall_score: overallScore
+        }
+      }
     }
 
     // 保存video ID用于后续去重识别

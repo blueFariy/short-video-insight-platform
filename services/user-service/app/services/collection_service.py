@@ -280,7 +280,7 @@ class CollectionService:
                     }
                 insight_result = await db.execute(select(VideoInsight).where(VideoInsight.video_id == video_row.id))
                 if insight_result.scalar_one_or_none():
-                    collection.is_analysis = True
+                    collection.video_info["is_analysis"] = True
 
 
         return list(collections), total

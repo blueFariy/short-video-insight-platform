@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed,ref } from 'vue'
+import Settings from '@/views/settings/Settings.vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessageBox } from 'element-plus'
@@ -7,6 +8,8 @@ import { ElMessageBox } from 'element-plus'
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const settingsRef = ref()
+const openSettings = () => settingsRef.value?.open()
 
 const isLoginPage = computed(() => route.path === '/login')
 
@@ -30,6 +33,9 @@ const handleCommand = (command: string) => {
       authStore.logout()
       router.push('/login')
     }).catch(() => {})
+  }
+  else if (command === 'profile') {
+    openSettings()
   }
 }
 </script>
@@ -81,6 +87,7 @@ const handleCommand = (command: string) => {
         <RouterView />
       </el-main>
     </el-container>
+    <Settings ref="settingsRef" />
   </div>
 
   <!-- Login page doesn't have layout -->

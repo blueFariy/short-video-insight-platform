@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from app.adapters import get_platform_adapter
-from app.core.database import db_manager, Creator, Video
+from app.models import db_manager, Creator, Video
 
 
 @shared_task(bind=True, max_retries=2)

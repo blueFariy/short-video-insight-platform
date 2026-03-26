@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import service, { collectorService, API_URL } from '@/api'
 
@@ -9,6 +9,22 @@ const loading = ref(false)
 const accounts = ref<any[]>([])
 const videos = ref<any[]>([])
 const schedulerStatus = ref<any>(null)
+
+// 定时任务相关状态
+const scheduledTasks = ref<any[]>([])
+const taskDefinitions = ref<any[]>([])
+const taskDialogVisible = ref(false)
+const taskForm = ref({
+  task_id: '',
+  name: '',
+  celery_task_name: '',
+  interval_seconds: 3600,
+  description: '',
+  task_params: null as any,
+  enabled: true
+})
+const taskFormMode = ref<'create' | 'edit'>('create')
+const taskFormLoading = ref(false)
 
 // 收藏夹
 const collections = ref<any[]>([])
@@ -184,6 +200,168 @@ const fetchSchedulerStatus = async () => {
   }
 }
 
+// 获取定时任务列表
+const fetchScheduledTasks = async () => {
+  loading.value = true
+  try {
+    const res = await collectorService.get(API_URL.COLLECTOR.SCHEDULER_TASKS) as any
+    const data = res.data || res
+    scheduledTasks.value = data.items || []
+  } catch (error) {
+    console.error('获取定时任务失败:', error)
+    scheduledTasks.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+// 获取可用任务定义
+const fetchTaskDefinitions = async () => {
+  try {
+    const res = await collectorService.get(API_URL.COLLECTOR.SCHEDULER_TASK_DEFINITIONS) as any
+    const data = res.data || res
+    taskDefinitions.value = data || []
+  } catch (error) {
+    console.error('获取任务定义失败:', error)
+    taskDefinitions.value = []
+  }
+}
+
+// 打开新建任务对话框
+const openCreateTaskDialog = () => {
+  taskFormMode.value = 'create'
+  taskForm.value = {
+    task_id: '',
+    name: '',
+    celery_task_name: '',
+    interval_seconds: 3600,
+    description: '',
+    task_params: null,
+    enabled: true
+  }
+  taskDialogVisible.value = true
+}
+
+// 打开编辑任务对话框
+const openEditTaskDialog = (task: any) => {
+  taskFormMode.value = 'edit'
+  taskForm.value = {
+    task_id: task.task_id,
+    name: task.name,
+    celery_task_name: task.celery_task_name,
+    interval_seconds: task.interval_seconds,
+    description: task.description || '',
+    task_params: task.task_params ? JSON.parse(task.task_params) : null,
+    enabled: task.enabled
+  }
+  taskDialogVisible.value = true
+}
+
+// 创建/更新任务
+const handleSaveTask = async () => {
+  if (!taskForm.value.task_id || !taskForm.value.name || !taskForm.value.celery_task_name) {
+    ElMessage.warning('请填写完整信息')
+    return
+  }
+
+  // 处理任务参数
+  let taskParams = null
+  if (taskForm.value.task_params) {
+    try {
+      taskParams = JSON.parse(taskForm.value.task_params)
+    } catch (e) {
+      ElMessage.warning('任务参数格式错误，请输入有效的JSON')
+      return
+    }
+  }
+
+  taskFormLoading.value = true
+  try {
+    if (taskFormMode.value === 'create') {
+      await collectorService.post(API_URL.COLLECTOR.SCHEDULER_TASK_CREATE, {
+        ...taskForm.value,
+        task_params: taskParams
+      })
+      ElMessage.success('任务创建成功')
+    } else {
+      await collectorService.put(API_URL.COLLECTOR.SCHEDULER_TASK_UPDATE(taskForm.value.task_id), {
+        name: taskForm.value.name,
+        celery_task_name: taskForm.value.celery_task_name,
+        interval_seconds: taskForm.value.interval_seconds,
+        description: taskForm.value.description,
+        task_params: taskParams,
+        enabled: taskForm.value.enabled
+      })
+      ElMessage.success('任务更新成功')
+    }
+    taskDialogVisible.value = false
+    fetchScheduledTasks()
+  } catch (error: any) {
+    ElMessage.error(error.message || '操作失败')
+  } finally {
+    taskFormLoading.value = false
+  }
+}
+
+// 删除任务
+const handleDeleteTask = async (task: any) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除任务 "${task.name}" 吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    await collectorService.delete(API_URL.COLLECTOR.SCHEDULER_TASK_DELETE(task.task_id))
+    ElMessage.success('任务已删除')
+    fetchScheduledTasks()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+// 启用任务
+const handleEnableTask = async (task: any) => {
+  try {
+    await collectorService.post(API_URL.COLLECTOR.SCHEDULER_TASK_ENABLE(task.task_id))
+    ElMessage.success('任务已启用')
+    fetchScheduledTasks()
+  } catch (error) {
+    ElMessage.error('启用失败')
+  }
+}
+
+// 禁用任务
+const handleDisableTask = async (task: any) => {
+  try {
+    await collectorService.post(API_URL.COLLECTOR.SCHEDULER_TASK_DISABLE(task.task_id))
+    ElMessage.success('任务已禁用')
+    fetchScheduledTasks()
+  } catch (error) {
+    ElMessage.error('禁用失败')
+  }
+}
+
+// 手动触发任务
+const handleTriggerTask = async (task: any) => {
+  try {
+    await collectorService.post(API_URL.COLLECTOR.SCHEDULER_TASK_TRIGGER(task.task_id))
+    ElMessage.success('任务已触发执行')
+  } catch (error) {
+    ElMessage.error('触发失败')
+  }
+}
+
+// 格式化间隔时间
+const formatInterval = (seconds: number) => {
+  if (seconds < 60) return `${seconds}秒`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时`
+  return `${Math.floor(seconds / 86400)}天`
+}
+
 // 创建账号
 const handleCreateAccount = async () => {
   if (!accountForm.value.name || !accountForm.value.creator_id || !accountForm.value.url) {
@@ -295,16 +473,6 @@ const handleSearch = async () => {
   }
 }
 
-// 运行任务
-const handleRunTask = async (taskId: string) => {
-  try {
-    await collectorService.post(API_URL.COLLECTOR.SCHEDULER_RUN_TASK(taskId))
-    ElMessage.success('任务已启动')
-  } catch (error) {
-    ElMessage.success('任务已启动（模拟）')
-  }
-}
-
 // 格式化数字
 const formatNumber = (num: number) => {
   if (!num) return '0'
@@ -343,6 +511,16 @@ onMounted(() => {
   fetchVideos()
   fetchSchedulerStatus()
   fetchCollections()
+  // 初始加载定时任务列表
+  fetchScheduledTasks()
+  fetchTaskDefinitions()
+})
+
+// 监听 tab 切换，加载定时任务
+watch(activeTab, (newVal) => {
+  if (newVal === 'tasks') {
+    fetchScheduledTasks()
+  }
 })
 </script>
 
@@ -541,21 +719,48 @@ onMounted(() => {
         <!-- 定时任务 -->
         <el-tab-pane label="定时任务" name="tasks">
           <div class="tab-header">
-            <el-button type="primary" @click="fetchSchedulerStatus">
-              <el-icon><Refresh /></el-icon> 刷新状态
+            <el-button type="primary" @click="openCreateTaskDialog">
+              <el-icon><Plus /></el-icon> 新建任务
+            </el-button>
+            <el-button @click="fetchScheduledTasks">
+              <el-icon><Refresh /></el-icon> 刷新
             </el-button>
           </div>
 
-          <el-table :data="schedulerStatus?.active_tasks || []" stripe>
-            <el-table-column prop="id" label="任务ID" min-width="150" />
+          <el-table :data="scheduledTasks" v-loading="loading" stripe>
+            <el-table-column prop="task_id" label="任务ID" min-width="120" />
             <el-table-column prop="name" label="任务名称" min-width="150" />
-            <el-table-column prop="schedule" label="执行周期" width="120" />
-            <el-table-column prop="last_run" label="上次执行" width="180" />
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column prop="celery_task_name" label="Celery任务" min-width="200" show-overflow-tooltip />
+            <el-table-column label="执行间隔" width="100">
               <template #default="{ row }">
-                <el-button size="small" type="success" @click="handleRunTask(row.id)">
-                  立即执行
+                {{ formatInterval(row.interval_seconds) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.enabled ? 'success' : 'info'">
+                  {{ row.enabled ? '启用' : '禁用' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="last_run" label="上次执行" width="160">
+              <template #default="{ row }">
+                {{ row.last_run ? row.last_run.replace('T', ' ').substring(0, 19) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="next_run" label="下次执行" width="160">
+              <template #default="{ row }">
+                {{ row.next_run ? row.next_run.replace('T', ' ').substring(0, 19) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" type="success" @click="handleTriggerTask(row)">触发</el-button>
+                <el-button size="small" @click="openEditTaskDialog(row)">编辑</el-button>
+                <el-button size="small" :type="row.enabled ? 'warning' : 'primary'" @click="row.enabled ? handleDisableTask(row) : handleEnableTask(row)">
+                  {{ row.enabled ? '禁用' : '启用' }}
                 </el-button>
+                <el-button size="small" type="danger" @click="handleDeleteTask(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -587,6 +792,45 @@ onMounted(() => {
       <template #footer>
         <el-button @click="accountDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleCreateAccount">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 定时任务对话框 -->
+    <el-dialog v-model="taskDialogVisible" :title="taskFormMode === 'create' ? '新建定时任务' : '编辑定时任务'" width="600px">
+      <el-form :model="taskForm" label-width="100px">
+        <el-form-item label="任务ID" required :disabled="taskFormMode === 'edit'">
+          <el-input v-model="taskForm.task_id" placeholder="如：my-custom-task" :disabled="taskFormMode === 'edit'" />
+        </el-form-item>
+        <el-form-item label="任务名称" required>
+          <el-input v-model="taskForm.name" placeholder="如：自定义采集任务" />
+        </el-form-item>
+        <el-form-item label="Celery任务" required>
+          <el-select v-model="taskForm.celery_task_name" placeholder="选择任务" style="width: 100%">
+            <el-option v-for="def in taskDefinitions" :key="def.celery_task_name" :label="def.name" :value="def.celery_task_name">
+              <span>{{ def.name }}</span>
+              <span style="color: #999; font-size: 12px; margin-left: 8px;">{{ def.description }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="执行间隔" required>
+          <el-input-number v-model="taskForm.interval_seconds" :min="60" :step="60" />
+          <span style="margin-left: 10px; color: #999;">秒 (最小60秒)</span>
+        </el-form-item>
+        <el-form-item label="任务描述">
+          <el-input v-model="taskForm.description" type="textarea" :rows="2" placeholder="任务描述信息" />
+        </el-form-item>
+        <el-form-item label="任务参数">
+          <el-input v-model="taskForm.task_params" type="textarea" :rows="3" placeholder='JSON格式，如：{"keyword": "美食"}' />
+        </el-form-item>
+        <el-form-item label="启用状态">
+          <el-switch v-model="taskForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="taskDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSaveTask" :loading="taskFormLoading">
+          {{ taskFormMode === 'create' ? '创建' : '保存' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>

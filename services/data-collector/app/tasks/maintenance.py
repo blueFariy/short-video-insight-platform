@@ -8,7 +8,7 @@ from loguru import logger
 from datetime import datetime, timedelta
 from sqlalchemy import select, delete, and_
 
-from app.core.database import db_manager, Video
+from app.models import db_manager, Video
 
 
 @shared_task

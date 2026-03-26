@@ -23,14 +23,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/short_video_insight"
 
     # Redis (for Celery)
-    REDIS_HOST: str = "localhost"
+    REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: Optional[str] = None
 
     # Celery
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
 
     # Elasticsearch
     ELASTICSEARCH_HOST: str = "localhost"
@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     COLLECTION_INTERVAL: int = 3600  # 1 hour
     MAX_VIDEOS_PER_ACCOUNT: int = 50
     VIDEO_PLATFORMS: List[str] = ["douyin", "bilibili", "xiaohongshu", "kuaishou"]
+
+    # Platform Cookies (file paths)
+    BILIBILI_COOKIE: str = "/app/cookies/cookies_bilibili.txt"
+    DOUYIN_COOKIE: str = "/app/cookies/cookies_douyin.txt"
 
     # Download Settings
     DOWNLOAD_DIR: str = "./downloads"
