@@ -47,28 +47,49 @@ const fetchAnalysisHistory = async () => {
     const items = res?.items || []
 
     analysisHistory.value = items
-      .filter((item: any) => item.item_id !== '0' && item.item_id !== 0)
+      .filter((item: any) => item.video_id && item.video_id !== 0)
       .map((item: any) => {
-        let insightData = null
-        let videoInfo = item.video_info || {}
-        // 尝试从notes中解析insight数据
-        try {
-          if (item.notes && item.notes.startsWith('{')) {
-            const parsed = JSON.parse(item.notes)
-            if (parsed.insight) {
-              insightData = parsed.insight
-              videoInfo = parsed.video || videoInfo
+        // 优先使用后端返回的 video_info
+        const videoInfo = item.video_info || {}
+        // 构建insight数据用于查看
+        const insightData = {
+          video: {
+            title: videoInfo.title || item.ai_summary?.substring(0, 30) || '分析报告',
+            cover: videoInfo.cover_url || '',
+            platform: videoInfo.platform || '',
+            url: videoInfo.url || '',
+            stats: {
+              views: videoInfo.play_count || 0,
+              likes: videoInfo.like_count || 0,
+              comments: videoInfo.comment_count || 0
             }
+          },
+          insight: {
+            overall: {
+              summary: item.ai_summary || '',
+              highlights: item.keywords || [],
+              dimensions: item.viral_factors || {},
+              improvements: item.improvements || []
+            },
+            hook: item.hook_3s ? {
+              hook_text: item.hook_3s,
+              hook_type: item.hook_type || ''
+            } : null,
+            structure: item.structure_analysis || (item.structure_type ? { type: item.structure_type } : null)
           }
-        } catch (e) {
-          // notes不是JSON格式，可能是普通备注
         }
         return {
           id: item.id,
-          item_id: item.item_id,
-          title: insightData?.video?.title || videoInfo?.title || item.notes || '分析报告',
-          platform: videoInfo?.platform || '',
-          cover: insightData?.video?.cover || videoInfo?.cover_url || '',
+          video_id: item.video_id,
+          title: videoInfo.title || item.ai_summary?.substring(0, 30) || '分析报告',
+          platform: videoInfo.platform || '',
+          cover: videoInfo.cover_url || '',
+          stats: {
+            views: videoInfo.play_count || 0,
+            likes: videoInfo.like_count || 0,
+            comments: videoInfo.comment_count || 0
+          },
+          overall_score: item.overall_score || 0,
           insight: insightData,
           video: videoInfo,
           created_at: item.created_at
@@ -88,23 +109,67 @@ const openHistoryDialog = () => {
 }
 
 // 从历史记录查看分析
-const viewFromHistory = (item: any) => {
-  if (item.insight) {
-    // 直接使用保存的insight数据
-    analysisResult.value = item.insight
-    // 设置videoUrl以便后续可能的操作
-    videoUrl.value = item.video?.url || item.item_id || ''
-    videoPlatform.value = item.video?.platform || item.platform || ''
-    currentVideoId.value = item.item_id || ''
-  } else {
-    // 如果没有保存的insight数据，尝试重新分析
-    videoUrl.value = item.video?.url || item.item_id || ''
-    videoPlatform.value = item.video?.platform || item.platform || ''
-    if (videoUrl.value) {
-      handleAnalyze()
+const viewFromHistory = async (item: any) => {
+  // 先关闭对话框
+  historyDialogVisible.value = false
+
+  if (!item.video_id) {
+    ElMessage.warning('无效的视频ID')
+    return
+  }
+
+  try {
+    // 从后端获取完整的insight详情
+    const res = await service.get(API_URL.INSIGHT.VIDEO_INSIGHT_DETAIL(item.video_id)) as any
+
+    if (res) {
+      const videoInfo = res.video_info || {}
+      // 构建完整的分析结果
+      analysisResult.value = {
+        video: {
+          title: videoInfo.title || res.ai_summary?.substring(0, 30) || '分析报告',
+          cover: videoInfo.cover_url || '',
+          platform: videoInfo.platform || '',
+          url: videoInfo.url || '',
+          stats: {
+            views: videoInfo.play_count || 0,
+            likes: videoInfo.like_count || 0,
+            comments: videoInfo.comment_count || 0
+          }
+        },
+        insight: {
+          overall: {
+            summary: res.ai_summary || '',
+            highlights: res.keywords || [],
+            dimensions: res.viral_factors || {},
+            improvements: res.improvements || []
+          },
+          hook: res.hook_3s ? {
+            hook_text: res.hook_3s,
+            hook_type: res.hook_type || ''
+          } : null,
+          structure: res.structure_analysis || (res.structure_type ? { type: res.structure_type } : null)
+        }
+      }
+      // 设置相关信息
+      videoUrl.value = videoInfo.url || ''
+      videoPlatform.value = videoInfo.platform || ''
+      currentVideoId.value = item.video_id?.toString() || ''
+    } else {
+      ElMessage.warning('未找到分析数据')
+    }
+  } catch (error) {
+    console.error('获取分析详情失败:', error)
+    // 如果获取失败，尝试使用已有的数据
+    if (item.insight) {
+      analysisResult.value = item.insight
+      videoUrl.value = item.video?.url || ''
+      videoPlatform.value = item.video?.platform || ''
+      currentVideoId.value = item.video_id?.toString() || ''
+    } else {
+      ElMessage.error('获取分析数据失败')
     }
   }
-  historyDialogVisible.value = false
 }
 
 // Auto-fill from query params
@@ -312,7 +377,8 @@ const handleSave = async () => {
       structure_type: insightData?.analysis?.structure?.type || '',
       structure_analysis: insightData?.analysis?.structure ? { segments: insightData?.analysis.structure.segments } : null,
       keywords: insightData?.overall?.highlights || [],
-      viral_factors: insightData?.overall?.dimensions || null
+      viral_factors: insightData?.overall?.dimensions || null,
+      improvements: insightData?.overall?.improvements || []
     }
 
     // 调用保存insight接口
@@ -493,24 +559,45 @@ const handleSave = async () => {
     <el-empty v-else description="输入视频链接开始分析" />
 
     <!-- 历史记录对话框 -->
-    <el-dialog v-model="historyDialogVisible" title="分析历史记录" width="700px">
+    <el-dialog v-model="historyDialogVisible" title="分析历史记录" width="900px">
       <div v-loading="historyLoading">
         <el-table :data="analysisHistory" v-if="analysisHistory.length > 0" max-height="400">
-          <el-table-column prop="title" label="视频标题" min-width="150" show-overflow-tooltip />
-          <el-table-column prop="platform" label="平台" width="80">
+          <el-table-column label="封面" width="80">
             <template #default="{ row }">
-              <el-tag v-if="row.platform" :type="row.platform === 'bilibili' ? 'primary' : row.platform === 'douyin' ? 'danger' : 'warning'" size="small">
-                {{ row.platform === 'bilibili' ? 'B站' : row.platform === 'douyin' ? '抖音' : row.platform }}
+              <el-image v-if="row.cover" :src="row.cover" fit="cover" style="width: 60px; height: 45px; border-radius: 4px;" />
+              <div v-else class="no-cover">无</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="title" label="视频标题" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="platform" label="平台" width="70">
+            <template #default="{ row }">
+              <el-tag v-if="row.platform" :type="row.platform === 'bilibili' ? 'primary' : row.platform === 'douyin' ? 'danger' : row.platform === 'xiaohongshu' ? 'success' : 'warning'" size="small">
+                {{ row.platform === 'bilibili' ? 'B站' : row.platform === 'douyin' ? '抖音' : row.platform === 'xiaohongshu' ? '小红书' : row.platform === 'kuaishou' ? '快手' : row.platform }}
               </el-tag>
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="分析时间" width="160">
+          <el-table-column label="播放/点赞/评论" width="130">
+            <template #default="{ row }">
+              {{ (row.stats?.views || 0).toLocaleString() }} /
+              {{ (row.stats?.likes || 0).toLocaleString() }} /
+              {{ (row.stats?.comments || 0).toLocaleString() }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="overall_score" label="评分" width="70">
+            <template #default="{ row }">
+              <el-tag v-if="row.overall_score" :type="row.overall_score >= 80 ? 'success' : row.overall_score >= 60 ? 'warning' : 'danger'" size="small">
+                {{ row.overall_score }}
+              </el-tag>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="分析时间" width="150">
             <template #default="{ row }">
               {{ new Date(row.created_at).toLocaleString() }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="100">
+          <el-table-column label="操作" width="80">
             <template #default="{ row }">
               <el-button type="primary" size="small" @click="viewFromHistory(row)">查看</el-button>
             </template>
@@ -527,6 +614,18 @@ const handleSave = async () => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+
+  .no-cover {
+    width: 60px;
+    height: 45px;
+    background: #f5f7fa;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 12px;
+  }
 }
 
 .page-header {

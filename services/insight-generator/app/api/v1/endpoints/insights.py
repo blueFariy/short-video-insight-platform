@@ -45,6 +45,7 @@ class SaveVideoInsightRequest(BaseModel):
     comment_high_freq: Optional[List[str]] = Field(None, description="Comment high frequency words")
     user_feedback: Optional[dict] = Field(None, description="User feedback JSON")
     viral_factors: Optional[dict] = Field(None, description="Viral factors JSON")
+    improvements: Optional[List[str]] = Field(None, description="Improvement suggestions")
 
 
 # 关键帧类型：字符串路径或对象
@@ -321,7 +322,8 @@ async def save_video_insight(
             sentiment_score=request.sentiment_score,
             comment_high_freq=request.comment_high_freq,
             user_feedback=request.user_feedback,
-            viral_factors=request.viral_factors
+            viral_factors=request.viral_factors,
+            improvements=request.improvements
         )
 
         db.add(insight)
@@ -372,8 +374,10 @@ async def get_all_insights(
     if structure_type is not None:
         filters['structure_type'] = structure_type
 
-    # 构建查询
-    stmt = select(VideoInsight)
+    # 构建查询 - 联合Video表获取视频信息
+    stmt = select(VideoInsight, Video).join(
+        Video, VideoInsight.video_id == Video.id, isouter=True
+    )
     for key, value in filters.items():
         stmt = stmt.where(getattr(VideoInsight, key) == value)
 
@@ -383,7 +387,7 @@ async def get_all_insights(
 
     # 执行查询
     result = await db.execute(stmt)
-    insights = result.scalars().all()
+    rows = result.all()
 
     # 获取总数
     count_stmt = select(func.count()).select_from(VideoInsight)
@@ -393,15 +397,38 @@ async def get_all_insights(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar()
 
-    if not insights:
-        raise HTTPException(status_code=404, detail="Insight not found for this video")
+    if not rows:
+        return success_response(data={
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size
+        })
 
     # Convert ORM objects to dict for serialization
     insights_data = []
-    for insight in insights:
+    for insight, video in rows:
+        # 计算综合评分
+        overall_score = 0
+        dimensions = insight.viral_factors or {}
+        if dimensions:
+            score_values = [v for k, v in dimensions.items() if isinstance(v, (int, float)) and k.endswith('_score')]
+            if score_values:
+                overall_score = round(sum(score_values) / len(score_values))
+
         insights_data.append({
             "id": insight.id,
             "video_id": insight.video_id,
+            "video_info": {
+                "title": video.title if video else None,
+                "platform": video.platform if video else None,
+                "cover_url": video.cover_image_url if video else None,
+                "url": video.video_url if video else None,
+                "play_count": video.play_count if video else 0,
+                "like_count": video.like_count if video else 0,
+                "comment_count": video.comment_count if video else 0,
+                "share_count": video.share_count if video else 0
+            },
             "ai_summary": insight.ai_summary,
             "hook_3s": insight.hook_3s,
             "hook_type": insight.hook_type,
@@ -413,6 +440,8 @@ async def get_all_insights(
             "comment_high_freq": insight.comment_high_freq,
             "user_feedback": insight.user_feedback,
             "viral_factors": insight.viral_factors,
+            "improvements": insight.improvements,
+            "overall_score": overall_score,
             "created_at": insight.created_at.isoformat() if insight.created_at else None
         })
 
@@ -432,19 +461,40 @@ async def get_video_insight(
     """获取视频的最新洞察"""
     from sqlalchemy import select, desc
     result = await db.execute(
-        select(VideoInsight)
-        .where(VideoInsight.video_id == video_id)
+        select(VideoInsight, Video).join(
+            Video, VideoInsight.video_id == Video.id, isouter=True
+        ).where(VideoInsight.video_id == video_id)
         .order_by(desc(VideoInsight.created_at))
         .limit(1)
     )
-    insight = result.scalar_one_or_none()
+    row = result.one_or_none()
 
-    if not insight:
+    if not row:
         raise HTTPException(status_code=404, detail="Insight not found for this video")
+
+    insight, video = row
+
+    # 计算综合评分
+    overall_score = 0
+    dimensions = insight.viral_factors or {}
+    if dimensions:
+        score_values = [v for k, v in dimensions.items() if isinstance(v, (int, float)) and k.endswith('_score')]
+        if score_values:
+            overall_score = round(sum(score_values) / len(score_values))
 
     return success_response(data={
         "id": insight.id,
         "video_id": insight.video_id,
+        "video_info": {
+            "title": video.title if video else None,
+            "platform": video.platform if video else None,
+            "cover_url": video.cover_image_url if video else None,
+            "url": video.video_url if video else None,
+            "play_count": video.play_count if video else 0,
+            "like_count": video.like_count if video else 0,
+            "comment_count": video.comment_count if video else 0,
+            "share_count": video.share_count if video else 0
+        },
         "ai_summary": insight.ai_summary,
         "hook_3s": insight.hook_3s,
         "hook_type": insight.hook_type,
@@ -456,5 +506,7 @@ async def get_video_insight(
         "comment_high_freq": insight.comment_high_freq,
         "user_feedback": insight.user_feedback,
         "viral_factors": insight.viral_factors,
+        "improvements": insight.improvements,
+        "overall_score": overall_score,
         "created_at": insight.created_at.isoformat() if insight.created_at else None
     })
