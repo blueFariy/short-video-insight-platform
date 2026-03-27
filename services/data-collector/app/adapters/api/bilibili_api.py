@@ -37,6 +37,7 @@ class BilibiliAPI:
 
     # 视频主分区
     VIDEO_MAIN_ZONES = {
+        "全站": 0,
         "动画": 1,
         "音乐": 3,
         "游戏": 4,
@@ -64,6 +65,9 @@ class BilibiliAPI:
     # 视频分区
     VIDEO_ZONES = {
         # 杂项
+        0: {
+
+        },
         -1: {
         },
         # 动画
@@ -258,6 +262,32 @@ class BilibiliAPI:
         },
     }
 
+    @staticmethod
+    def get_main_category_name(tid: int) -> str:
+        """
+        根据视频tid获取主分区名称
+
+        Args:
+            tid: 视频的tid（子分区ID）
+
+        Returns:
+            主分区名称，如"动画"、"音乐"等，未找到返回"unknown"
+        """
+        if tid == 0:
+            return "unknown"
+
+        # 反向查找：从子分区找到主分区
+        for main_id, sub_zones in BilibiliAPI.VIDEO_ZONES.items():
+            if main_id <= 0:
+                continue
+            if tid in sub_zones.values():
+                # 找到主分区ID，反向查找主分区名称
+                for name, main_id_check in BilibiliAPI.VIDEO_MAIN_ZONES.items():
+                    if main_id_check == main_id:
+                        return name
+
+        return "unknown"
+
     def _load_cookies(self, cookie_file: str) -> str:
         """
         从Netscape格式的cookies.txt文件加载cookies
@@ -280,8 +310,9 @@ class BilibiliAPI:
     def __init__(self, timeout: int = 30, cookie_file: str = None):
         self.client = httpx.AsyncClient(timeout=timeout)
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://www.bilibili.com"
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            "Referer": "https://www.bilibili.com",
         }
 
         self.headers["Cookie"] = self._load_cookies(cookie_file)

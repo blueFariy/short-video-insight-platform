@@ -65,7 +65,6 @@ class BilibiliAdapter(PlatformAdapter):
 
             # 调用排行榜API
             data = await self.api.get_ranking(rid=rid)
-
             for item in data[:limit]:
                 videos.append(self._parse_video_data(item))
 
@@ -99,53 +98,6 @@ class BilibiliAdapter(PlatformAdapter):
 
         return videos
 
-    async def search_creators(self, keyword: str, limit: int = 20) -> List[Creator]:
-        """搜索创作者"""
-        creators = []
-        try:
-            data = await self.api.search(
-                search_type="bili_user",
-                keyword=keyword,
-                page_size=limit
-            )
-
-            result_list = data.get("result", [])
-            for item in result_list:
-                # 转换为创作者格式
-                creators.append(Creator(
-                    platform=self.PLATFORM_NAME,
-                    creator_id=str(item.get("mid", "")),
-                    name=item.get("uname", ""),
-                    avatar_url=item.get("upic", ""),
-                    description=item.get("usign", ""),
-                    follower_count=item.get("fans", 0),
-                ))
-
-        except Exception as e:
-            logger.warning(f"搜索创作者失败: {e}")
-
-        return creators
-
-    async def get_creator_videos(self, creator_id: str, limit: int = 50) -> List[Video]:
-        """获取创作者的视频列表"""
-        videos = []
-        try:
-            mid = int(creator_id)
-            # 获取用户视频列表
-            data = await self.api.get_user_videos(mid=mid, ps=limit)
-
-            list_data = data.get("archives", [])
-
-            for item in list_data:
-                # 用户视频列表格式略有不同，需要适配
-                item["owner"] = item.get("author", {})
-                videos.append(self._parse_video_data(item))
-
-        except Exception as e:
-            logger.warning(f"获取创作者视频列表失败: {e}")
-
-        return videos
-
     async def get_video_detail(self, video_id: str) -> Optional[Video]:
         """
         获取单个视频信息
@@ -166,18 +118,6 @@ class BilibiliAdapter(PlatformAdapter):
             return self._parse_video_data(data)
         except Exception as e:
             logger.warning(f"获取视频信息失败: {e}")
-            return None
-
-    async def get_creator_info(self, creator_id: str) -> Optional[Creator]:
-        """获取创作者信息"""
-        try:
-            mid = int(creator_id)
-            data = await self.api.get_user_info(mid)
-            data_stat = await self.api.get_user_archive(mid)
-            data = data | data_stat
-            return self._parse_creator_data(data)
-        except Exception as e:
-            logger.warning(f"获取创作者信息失败: {e}")
             return None
 
     async def get_comments(self, video_id: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -206,6 +146,71 @@ class BilibiliAdapter(PlatformAdapter):
             logger.warning(f"获取评论失败: {e}")
 
         return comments
+
+    async def search_creators(self, keyword: str, limit: int = 20) -> List[Creator]:
+        """搜索创作者"""
+        creators = []
+        try:
+            data = await self.api.search(
+                search_type="bili_user",
+                keyword=keyword,
+                page_size=limit
+            )
+
+            result_list = data.get("result", [])
+            for item in result_list:
+                # 转换为创作者格式
+                creators.append(Creator(
+                    platform=self.PLATFORM_NAME,
+                    creator_id=str(item.get("mid", "")),
+                    name=item.get("uname", ""),
+                    avatar_url=item.get("upic", ""),
+                    description=item.get("usign", ""),
+                    follower_count=item.get("fans", 0),
+                ))
+
+        except Exception as e:
+            logger.warning(f"搜索创作者失败: {e}")
+
+        return creators
+
+    async def get_creator_videos(self, creator_id: str, pn: int = 1, limit: int = 50) -> List[Video]:
+        """获取创作者的视频列表"""
+        videos = []
+        try:
+            mid = int(creator_id)
+            # 获取用户视频列表
+            data = await self.api.get_user_videos(mid=mid, pn=pn, ps=limit)
+
+            list_data = data.get("archives", [])
+
+            for item in list_data:
+                # 用户视频列表格式略有不同，需要适配
+                item["owner"] = item.get("author", {})
+                parse_video = self._parse_video_data(item)
+                parse_video.count = data.get("page", {}).get("count", 0)
+                videos.append(parse_video)
+
+        except Exception as e:
+            logger.warning(f"获取创作者视频列表失败: {e}")
+
+        return videos
+
+    async def get_creator_info(self, creator_id: str) -> Optional[Creator]:
+        """获取创作者信息"""
+        try:
+            mid = int(creator_id)
+            data = await self.api.get_user_info(mid)
+            data_stat = await self.api.get_user_archive(mid)
+            creator_videos = await self.api.get_user_videos(creator_id, ps=1)
+            creator_first_video = await self.api.get_user_videos(creator_id, pn=creator_videos.get('page').get('count'),ps=1)
+            data = data | data_stat
+            data['last_video_date'] = creator_videos.get('archives', [])[0].get('pubdate', None)
+            data['first_video_date'] = creator_first_video.get('archives', [])[0].get('pubdate', None)
+            return self._parse_creator_data(data)
+        except Exception as e:
+            logger.warning(f"获取创作者信息失败: {e}")
+            return None
 
     def _create_video_metrics(self, data: Dict[str, Any]) -> VideoMetrics:
         """创建视频指标对象"""
@@ -245,6 +250,12 @@ class BilibiliAdapter(PlatformAdapter):
         """解析视频数据"""
         owner = data.get("owner", {})
 
+        # 获取视频tid（分区ID）
+        tid = data.get("tid", 0)
+
+        # 根据tid获取主分区名称
+        category = BilibiliAPI.get_main_category_name(tid)
+
         # 创建metrics
         metrics = self._create_video_metrics(data)
 
@@ -258,6 +269,7 @@ class BilibiliAdapter(PlatformAdapter):
             publish_time=datetime.fromtimestamp(data.get("pubdate", 0)) if data.get("pubdate") else None,
             duration=data.get("duration", 0),
             metrics=metrics,
+            category=category,
             # B站特有字段
             bvid=data.get("bvid", ""),
             creator_id=str(owner.get("mid", "")),
@@ -292,6 +304,8 @@ class BilibiliAdapter(PlatformAdapter):
                 video_count=data.get("archive_count", 0),
                 avg_play_count=(data.get("archive").get("view") // data.get("archive_count", 0)) if data.get(
                     "archive_count", 0) else 0,
+                last_video_date=datetime.fromtimestamp(data.get("last_video_date", 0)),
+                first_video_date=datetime.fromtimestamp(data.get("first_video_date", 0)),
             )
         return None
 

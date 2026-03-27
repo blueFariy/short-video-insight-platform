@@ -98,6 +98,8 @@ async def create_account(request: CreateCreatorRequest):
         'total_likes': adapter_creator.total_likes if adapter_creator else None,
         'video_count': adapter_creator.video_count if adapter_creator else None,
         'avg_play_count': adapter_creator.avg_play_count if adapter_creator else None,
+        'last_video_date': adapter_creator.last_video_date if adapter_creator else None,
+        'first_video_date': adapter_creator.first_video_date if adapter_creator else None,
         'stats_updated_at': adapter_creator.last_updated if adapter_creator else None,
     }
     # 使用 adapter 返回的信息填充字段
@@ -252,6 +254,53 @@ async def collect_all(request: CollectAllRequest):
         "accounts_collected": len(creators),
         "videos": [v.to_dict() for v in all_videos],
         "total": len(all_videos)
+    })
+
+
+@router.get("/videos/viral", summary="获取爆款视频列表")
+async def get_viral_videos(
+    limit: int = Query(3, ge=1, le=20, description="返回数量"),
+    min_play_count: int = Query(100000, ge=0, description="最小播放量阈值")
+):
+    """
+    获取爆款视频列表，用于首页展示
+    - limit: 返回数量，默认3条
+    - min_play_count: 最小播放量阈值，默认10万
+    """
+    from app.models import db_manager, Video
+
+    db_manager.init_db()
+    async with db_manager.get_session() as session:
+        from sqlalchemy import select, desc
+        stmt = (
+            select(Video)
+            .where(Video.play_count >= min_play_count)
+            .order_by(desc(Video.play_count))
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        videos = list(result.scalars().all())
+
+    videos_list = []
+    for v in videos:
+        videos_list.append({
+            "id": v.id,
+            "video_id": v.video_id,
+            "video_url": v.video_url,
+            "title": v.title,
+            "platform": v.platform,
+            "cover_url": v.cover_image_url,
+            "play_count": v.play_count,
+            "like_count": v.like_count,
+            "comment_count": v.comment_count,
+            "share_count": v.share_count,
+            "creator_name": v.creator_name,
+            "publish_time": v.publish_time.isoformat() if v.publish_time else None
+        })
+
+    return success_response(data={
+        "videos": videos_list,
+        "total": len(videos_list)
     })
 
 
@@ -559,51 +608,3 @@ async def proxy_image(url: str):
     except httpx.RequestError as e:
         logger.error(f"Failed to proxy image: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch image")
-
-
-# 获取爆款视频列表 (首页热门爆款)
-@router.get("/videos/viral", summary="获取爆款视频列表")
-async def get_viral_videos(
-    limit: int = Query(3, ge=1, le=20, description="返回数量"),
-    min_play_count: int = Query(100000, ge=0, description="最小播放量阈值")
-):
-    """
-    获取爆款视频列表，用于首页展示
-    - limit: 返回数量，默认3条
-    - min_play_count: 最小播放量阈值，默认10万
-    """
-    from app.models import db_manager, Video
-
-    db_manager.init_db()
-    async with db_manager.get_session() as session:
-        from sqlalchemy import select, desc
-        stmt = (
-            select(Video)
-            .where(Video.play_count >= min_play_count)
-            .order_by(desc(Video.play_count))
-            .limit(limit)
-        )
-        result = await session.execute(stmt)
-        videos = list(result.scalars().all())
-
-    videos_list = []
-    for v in videos:
-        videos_list.append({
-            "id": v.id,
-            "video_id": v.video_id,
-            "video_url": v.video_url,
-            "title": v.title,
-            "platform": v.platform,
-            "cover_url": v.cover_image_url,
-            "play_count": v.play_count,
-            "like_count": v.like_count,
-            "comment_count": v.comment_count,
-            "share_count": v.share_count,
-            "creator_name": v.creator_name,
-            "publish_time": v.publish_time.isoformat() if v.publish_time else None
-        })
-
-    return success_response(data={
-        "videos": videos_list,
-        "total": len(videos_list)
-    })

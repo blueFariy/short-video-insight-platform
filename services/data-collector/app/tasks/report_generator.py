@@ -96,7 +96,6 @@ def _generate_overview(stats: dict) -> dict:
     return {
         "total_videos": stats["total_videos"],
         "total_plays": stats["total_plays"],
-        "growth_rate": 0.15,  # TODO: 计算实际增长率
         "viral_videos_count": 0  # TODO: 统计爆款视频数
     }
 

@@ -663,6 +663,12 @@ watch(activeTab, (newVal) => {
                 </a>
               </template>
             </el-table-column>
+            <el-table-column prop="category" label="分类" width="100">
+              <template #default="{ row }">
+                <el-tag v-if="row.category" size="small">{{ row.category }}</el-tag>
+                <span v-else style="color: #999">-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="平台" width="100">
               <template #default="{ row }">
                 <el-tag :type="getPlatformTag(row.platform).type">
@@ -753,14 +759,18 @@ watch(activeTab, (newVal) => {
                 {{ row.next_run ? row.next_run.replace('T', ' ').substring(0, 19) : '-' }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="180" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" type="success" @click="handleTriggerTask(row)">触发</el-button>
-                <el-button size="small" @click="openEditTaskDialog(row)">编辑</el-button>
-                <el-button size="small" :type="row.enabled ? 'warning' : 'primary'" @click="row.enabled ? handleDisableTask(row) : handleEnableTask(row)">
-                  {{ row.enabled ? '禁用' : '启用' }}
-                </el-button>
-                <el-button size="small" type="danger" @click="handleDeleteTask(row)">删除</el-button>
+                <div class="task-actions">
+                  <el-button size="small" type="success" @click="handleTriggerTask(row)">触发</el-button>
+                  <el-button size="small" @click="openEditTaskDialog(row)">编辑</el-button>
+                </div>
+                <div class="task-actions">
+                  <el-button size="small" :type="row.enabled ? 'warning' : 'primary'" @click="row.enabled ? handleDisableTask(row) : handleEnableTask(row)">
+                    {{ row.enabled ? '禁用' : '启用' }}
+                  </el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteTask(row)">删除</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -911,5 +921,14 @@ watch(activeTab, (newVal) => {
 
 .creator-link {
   color: #67c23a;
+}
+
+.task-actions {
+  display: inline-block;
+  margin-right: 8px;
+
+  .el-button {
+    margin-bottom: 4px;
+  }
 }
 </style>

@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     ALERT_ENABLED: bool = True
     ALERT_CHANNELS: List[str] = ["app", "email"]
 
+    # JWT Secret Key (for token validation from user-service)
+    SECRET_KEY: str = "your-secret-key-change-in-production"
+
 
 @lru_cache()
 def get_settings():

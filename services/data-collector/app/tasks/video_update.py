@@ -88,8 +88,6 @@ def send_viral_alert(video_data: dict, signal_data: dict):
             video_id=signal_data.get('video_id', ''),
             growth_score=signal_data.get('growth_score', 0.0),
             growth_stage=signal_data.get('growth_stage', 'unknown'),
-            authenticity=signal_data.get('authenticity', 1.0),
-            sentiment_shift=signal_data.get('sentiment_shift', 0.0),
             should_alert=signal_data.get('should_alert', False),
             alert_level=signal_data.get('alert_level', 'none'),
             message=signal_data.get('message', '')

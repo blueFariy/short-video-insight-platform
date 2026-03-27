@@ -282,6 +282,8 @@ class CreatorService:
             video_count=creator.video_count or 0,
             avg_play_count=creator.avg_play_count or 0,
             status="active" if creator.is_monitored else "inactive",
+            last_video_date=creator.last_video_date or None,
+            first_video_date=creator.first_video_date or None,
             last_updated=creator.stats_updated_at.isoformat() if creator.stats_updated_at else None,
             created_at=creator.created_at if creator.created_at else datetime.now()
         )

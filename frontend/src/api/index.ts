@@ -236,8 +236,8 @@ export const API_URL = {
         // 图片代理 - 解决B站图片403问题
         IMAGE_PROXY: `${COLLECTOR_BASE_URL}/api/v1/collector/proxy/image`,
         // 用户兴趣配置
-        USER_INTEREST_GET: `${COLLECTOR_BASE_URL}/api/v1/collector/user/interest`,
-        USER_INTEREST_UPDATE: `${COLLECTOR_BASE_URL}/api/v1/collector/user/interest`
+        USER_INTEREST_GET: `${COLLECTOR_BASE_URL}/api/v1/viral/user/interest`,
+        USER_INTEREST_UPDATE: `${COLLECTOR_BASE_URL}/api/v1/viral/user/interest`
     },
 
     // Competitor Monitor (port 8005)

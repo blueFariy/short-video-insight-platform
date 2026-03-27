@@ -88,7 +88,7 @@ class AlertService:
 
         # 格式化数字
         play_count = self._format_number(video.metrics.play_count)
-        growth_rate = f"{signal.growth_score:.1%}"
+        score = f"{signal.growth_score:.1f}"
 
         if signal.alert_level == "red":
             # 红色预警 - 爆款确认
@@ -99,7 +99,7 @@ class AlertService:
 
 📊 核心数据:
 - 播放量: {play_count}
-- 增长率: {growth_rate}
+- 爆款分数: {score}
 - 互动率: {video.metrics.engagement_rate:.1%}
 
 💡 AI洞察: {signal.message}
@@ -116,7 +116,7 @@ class AlertService:
 
 🔥 增长信号:
 - 增长阶段: {signal.growth_stage}
-- 真实性: {signal.authenticity:.0%}
+- 爆款分数: {score}
 
 🎯 建议: 建议尽快分析，抢占先机！
 
