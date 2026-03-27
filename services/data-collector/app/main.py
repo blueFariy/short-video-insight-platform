@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi import WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
@@ -21,6 +22,7 @@ from app.core.handlers import (
     general_exception_handler
 )
 from app.api.v1.router import api_router
+from app.services.websocket_manager import manager as ws_manager
 
 
 # Configure logging
@@ -92,6 +94,23 @@ app.add_exception_handler(Exception, general_exception_handler)
 
 # Include routers
 app.include_router(api_router, prefix="/api/v1")
+
+
+# WebSocket endpoint
+@app.websocket("/ws/viral-alerts")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket端点用于实时接收爆款预警"""
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # 保持连接，等待接收消息（可选）
+            data = await websocket.receive_text()
+            # 可以处理客户端发送的消息
+            logger.info(f"Received from client: {data}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        ws_manager.disconnect(websocket)
 
 
 # Health check endpoint

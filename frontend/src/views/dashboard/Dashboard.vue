@@ -1,16 +1,147 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { collectorService, API_URL } from '@/api'
 
 const router = useRouter()
 
-// 今日洞察
-const todayInsights = ref([
-  { id: 1, type: 'warning', title: '美妆领域有1个话题正在起势', time: '10:30' },
-  { id: 2, type: 'info', title: '您关注的达人发布了新视频', time: '09:15' }
-])
+// WebSocket连接
+let ws: WebSocket | null = null
+
+// 今日洞察 - 从 viral_alerts 获取
+const todayInsights = ref<any[]>([])
+
+// 弹窗相关
+const alertDialogVisible = ref(false)
+const currentAlert = ref<any>({})
+
+// 获取今日洞察数据（从 viral_alerts 表）
+const fetchTodayInsights = async () => {
+  try {
+    const res = await collectorService.get(API_URL.COLLECTOR.ALERTS, {
+      params: { page: 1, page_size: 10 }
+    }) as any
+    const alerts = res.items || []
+
+    // 转换为今日洞察格式
+    todayInsights.value = alerts.map((alert: any) => ({
+      id: alert.id,
+      type: alert.alert_level, // yellow/orange/red
+      alert_level: alert.alert_level,
+      platform: alert.platform,
+      title: alert.title,
+      url: alert.video_url,
+      factors: alert.factors || [],
+      time: alert.created_at ? alert.created_at.replace('T', ' ').substring(0, 16) : ''
+    }))
+  } catch (error) {
+    console.error('获取今日洞察失败:', error)
+  }
+}
+
+// 连接 WebSocket
+const connectWebSocket = () => {
+  const wsUrl = `ws://localhost:8004/ws/viral-alerts`
+  ws = new WebSocket(wsUrl)
+
+  ws.onopen = () => {
+    console.log('WebSocket connected')
+  }
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      if (data.type === 'viral_alert') {
+        // 添加新预警到列表顶部
+        const alert = data.data
+        todayInsights.value.unshift({
+          id: alert.id,
+          type: alert.alert_level,
+          alert_level: alert.alert_level,
+          platform: alert.platform,
+          title: alert.title,
+          url: alert.url,
+          factors: alert.factors || [],
+          time: new Date().toLocaleString()
+        })
+
+        // 展示消息通知
+        showNotification(alert)
+      }
+    } catch (e) {
+      console.error('Parse WebSocket message failed:', e)
+    }
+  }
+
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error)
+  }
+
+  ws.onclose = () => {
+    console.log('WebSocket disconnected, reconnecting...')
+    // 重新连接
+    setTimeout(connectWebSocket, 3000)
+  }
+}
+
+// 显示桌面通知
+const showNotification = (alert: any) => {
+  const typeMap: Record<string, 'warning' | 'info'> = {
+    red: 'warning',
+    orange: 'warning',
+    yellow: 'info'
+  }
+  ElMessage({
+    message: `【${getAlertLevelText(alert.alert_level)}】${alert.platform} - ${alert.title.substring(0, 20)}`,
+    type: typeMap[alert.alert_level] || 'info',
+    duration: 5000
+  })
+}
+
+// 获取预警级别文本
+const getAlertLevelText = (level: string) => {
+  const map: Record<string, string> = {
+    red: '红色预警',
+    orange: '橙色预警',
+    yellow: '黄色预警'
+  }
+  return map[level] || level
+}
+
+// 点击洞察项
+const handleInsightClick = (item: any) => {
+  currentAlert.value = item
+  alertDialogVisible.value = true
+}
+
+// 打开视频链接
+const openVideoUrl = (url: string) => {
+  if (url) {
+    window.open(url, '_blank')
+  }
+}
+
+// 平台标签
+const getPlatformTag = (platform: string) => {
+  const map: Record<string, { label: string; type: string }> = {
+    douyin: { label: '抖音', type: 'danger' },
+    bilibili: { label: 'B站', type: 'warning' },
+    xiaohongshu: { label: '小红书', type: 'success' },
+    kuaishou: { label: '快手', type: 'info' }
+  }
+  return map[platform] || { label: platform, type: 'info' }
+}
+
+// 预警级别标签
+const getAlertLevelTag = (level: string) => {
+  const map: Record<string, string> = {
+    red: 'danger',
+    orange: 'warning',
+    yellow: 'info'
+  }
+  return map[level] || 'info'
+}
 
 // 热门爆款视频
 const viralVideos = ref<any[]>([])
@@ -30,7 +161,6 @@ const fetchViralVideos = async () => {
     viralVideos.value = res.videos || []
   } catch (error) {
     console.error('获取爆款视频失败:', error)
-    // 使用备用数据
     viralVideos.value = []
   }
 }
@@ -63,27 +193,23 @@ const goToLibrary = () => {
   ElMessage.info('素材库功能开发中')
 }
 
-// 平台标签
-const getPlatformTag = (platform: string) => {
-  const map: Record<string, { label: string; type: string }> = {
-    douyin: { label: '抖音', type: 'danger' },
-    bilibili: { label: 'B站', type: 'warning' },
-    xiaohongshu: { label: '小红书', type: 'success' },
-    kuaishou: { label: '快手', type: 'info' }
-  }
-  return map[platform] || { label: platform, type: 'info' }
-}
-
 // 格式化数字
 const formatNumber = (num: number) => {
   if (!num) return '0'
   if (num >= 10000) return (num / 10000).toFixed(1) + '万'
-  if (num >= 1000) return (num / 1000).toFixed(1) + '千'
   return num.toString()
 }
 
 onMounted(() => {
+  fetchTodayInsights()
   fetchViralVideos()
+  connectWebSocket()
+})
+
+onUnmounted(() => {
+  if (ws) {
+    ws.close()
+  }
 })
 </script>
 
@@ -106,10 +232,15 @@ onMounted(() => {
             </div>
           </template>
           <div class="alert-list">
-            <div v-for="item in todayInsights" :key="item.id" class="alert-item">
-              <el-icon><WarningFilled v-if="item.type === 'warning'" /><InfoFilled v-else /></el-icon>
-              <span>{{ item.title }}</span>
-              <span class="time">{{ item.time }}</span>
+            <div v-for="item in todayInsights" :key="item.id" class="alert-item" @click="handleInsightClick(item)">
+              <el-tag :type="getAlertLevelTag(item.type)" size="small">
+                {{ getAlertLevelText(item.type) }}
+              </el-tag>
+              <el-tag :type="getPlatformTag(item.platform).type" size="small">
+                {{ getPlatformTag(item.platform).label }}
+              </el-tag>
+              <span class="alert-title">{{ item.title }}</span>
+              <a class="open-link" @click.stop="openVideoUrl(item.url)">打开链接</a>
             </div>
           </div>
         </el-card>
@@ -196,6 +327,35 @@ onMounted(() => {
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 预警详情弹窗 -->
+    <el-dialog v-model="alertDialogVisible" title="预警详情" width="500px">
+      <div class="alert-detail">
+        <div class="detail-row">
+          <el-tag :type="getAlertLevelTag(currentAlert.alert_level)" size="large">
+            {{ getAlertLevelText(currentAlert.alert_level) }}
+          </el-tag>
+          <el-tag :type="getPlatformTag(currentAlert.platform).type" size="large">
+            {{ getPlatformTag(currentAlert.platform).label }}
+          </el-tag>
+        </div>
+        <div class="detail-title">
+          <h3>{{ currentAlert.title }}</h3>
+        </div>
+        <div class="detail-factors" v-if="currentAlert.factors && currentAlert.factors.length > 0">
+          <h4>影响因素：</h4>
+          <ul>
+            <li v-for="(factor, index) in currentAlert.factors" :key="index">
+              {{ factor }}
+            </li>
+          </ul>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="alertDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="openVideoUrl(currentAlert.url)">打开视频链接</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -235,21 +395,79 @@ onMounted(() => {
     .alert-item {
       display: flex;
       align-items: center;
-      padding: 12px 0;
+      padding: 12px 8px;
       border-bottom: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: background-color 0.2s;
+
+      &:hover {
+        background-color: var(--hover-color);
+      }
 
       &:last-child {
         border-bottom: none;
       }
 
-      .el-icon {
-        margin-right: 12px;
+      .el-tag {
+        margin-right: 8px;
+      }
+
+      .alert-title {
+        flex: 1;
+        margin-left: 8px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .open-link {
+        margin-left: 8px;
+        color: var(--el-color-primary);
+        cursor: pointer;
+        text-decoration: none;
+
+        &:hover {
+          text-decoration: underline;
+        }
       }
 
       .time {
         margin-left: auto;
         color: var(--text-secondary);
         font-size: 12px;
+      }
+    }
+  }
+
+  .alert-detail {
+    .detail-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .detail-title {
+      margin-bottom: 16px;
+
+      h3 {
+        margin: 0;
+        word-break: break-all;
+      }
+    }
+
+    .detail-factors {
+      h4 {
+        margin: 0 0 8px;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 20px;
+
+        li {
+          margin-bottom: 4px;
+          color: var(--text-regular);
+        }
       }
     }
   }

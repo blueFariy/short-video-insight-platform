@@ -69,7 +69,10 @@ class AlertService:
                 logger.error(f"Failed to send alert via {channel}: {e}")
                 results.append({"channel": channel, "status": "error", "error": str(e)})
 
-        # 5. 记录预警日志
+        # 5. WebSocket广播预警消息（推送给前端）
+        await self._broadcast_via_websocket(user_id, video, signal, content.level)
+
+        # 6. 记录预警日志
         await self._log_alert(user_id, video.video_id, signal, results)
 
         return {
@@ -78,6 +81,36 @@ class AlertService:
             "alert_level": content.level,
             "channels": results
         }
+
+    async def _broadcast_via_websocket(
+        self,
+        user_id: int,
+        video: Video,
+        signal: ViralSignal,
+        alert_level: str
+    ):
+        """通过WebSocket广播预警消息到前端"""
+        try:
+            from app.services.websocket_manager import manager
+
+            # 构建预警消息数据
+            alert_data = {
+                "id": f"{video.video_id}_{user_id}",
+                "alert_level": alert_level,
+                "platform": video.platform,
+                "title": video.title,
+                "url": video.url,
+                "cover_url": video.cover_url,
+                "factors": signal.vs_benchmark.get("factors", []) if signal.vs_benchmark else [],
+                "message": signal.message,
+                "created_at": None  # 前端可以添加时间戳
+            }
+
+            await manager.broadcast_viral_alert(alert_data)
+            logger.info(f"Broadcasted viral alert via WebSocket: {video.video_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to broadcast via WebSocket: {e}")
 
     def _build_alert_content(
         self,
