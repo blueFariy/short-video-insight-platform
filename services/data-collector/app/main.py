@@ -62,7 +62,37 @@ async def lifespan(app: FastAPI):
 
     await scheduler_service.start()
 
+    # Start RabbitMQ task consumer in background thread
+    try:
+        from app.core.task_consumer import start_task_consumer
+        start_task_consumer()
+        logger.info("RabbitMQ task consumer started")
+    except Exception as e:
+        logger.error(f"Failed to start RabbitMQ consumer: {e}")
+
+    # Start database write consumer in background thread
+    try:
+        from app.core.db_write_consumer import start_db_write_consumer
+        start_db_write_consumer()
+        logger.info("Database write consumer started")
+    except Exception as e:
+        logger.error(f"Failed to start DB write consumer: {e}")
+
     yield
+
+    # Stop RabbitMQ task consumer
+    try:
+        from app.core.task_consumer import stop_task_consumer
+        stop_task_consumer()
+    except Exception as e:
+        logger.error(f"Error stopping RabbitMQ consumer: {e}")
+
+    # Stop database write consumer
+    try:
+        from app.core.db_write_consumer import stop_db_write_consumer
+        stop_db_write_consumer()
+    except Exception as e:
+        logger.error(f"Error stopping DB write consumer: {e}")
 
     # Stop scheduler
     await scheduler_service.stop()

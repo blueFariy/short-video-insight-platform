@@ -11,6 +11,16 @@ let ws: WebSocket | null = null
 
 // 今日洞察 - 从 viral_alerts 获取
 const todayInsights = ref<any[]>([])
+const currentPage = ref(1)
+const pageSize = ref(10)
+const totalCount = ref(0)
+
+// 筛选条件
+const filterIsRead = ref<boolean | ''>('')
+const filterAlertLevel = ref('')
+const filterPlatform = ref('')
+const filterKeyword = ref('')
+const sortOrder = ref<'desc' | 'asc'>('desc')
 
 // 弹窗相关
 const alertDialogVisible = ref(false)
@@ -19,30 +29,62 @@ const currentAlert = ref<any>({})
 // 获取今日洞察数据（从 viral_alerts 表）
 const fetchTodayInsights = async () => {
   try {
+    const params: any = {
+      page: currentPage.value,
+      page_size: pageSize.value
+    }
+    if (filterAlertLevel.value) {
+      params.alert_level = filterAlertLevel.value
+    }
+    if (filterPlatform.value) {
+      params.platform = filterPlatform.value
+    }
+    if (filterIsRead.value !== '') {
+      params.is_read = filterIsRead.value
+    }
+    if (filterKeyword.value) {
+      params.keyword = filterKeyword.value
+    }
+
     const res = await collectorService.get(API_URL.COLLECTOR.ALERTS, {
-      params: { page: 1, page_size: 10 }
+      params
     }) as any
-    const alerts = res.items || []
+    let alerts = res.items || []
+    totalCount.value = res.total || 0
 
     // 转换为今日洞察格式
     todayInsights.value = alerts.map((alert: any) => ({
       id: alert.id,
-      type: alert.alert_level, // yellow/orange/red
+      type: alert.alert_level,
       alert_level: alert.alert_level,
       platform: alert.platform,
       title: alert.title,
       url: alert.video_url,
       factors: alert.factors || [],
-      time: alert.created_at ? alert.created_at.replace('T', ' ').substring(0, 16) : ''
+      time: alert.created_at ? alert.created_at.replace('T', ' ').substring(0, 16) : '',
+      created_at: alert.created_at,
+      is_read: alert.is_read || false
     }))
   } catch (error) {
     console.error('获取今日洞察失败:', error)
   }
 }
 
+// 筛选变化
+const handleFilterChange = () => {
+  currentPage.value = 1
+  fetchTodayInsights()
+}
+
+// 翻页
+const handlePageChange = (page: number) => {
+  currentPage.value = page
+  fetchTodayInsights()
+}
+
 // 连接 WebSocket
 const connectWebSocket = () => {
-  const wsUrl = `ws://localhost:8004/ws/viral-alerts`
+  const wsUrl = `ws://data_collector/ws/viral-alerts`
   ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {
@@ -55,6 +97,7 @@ const connectWebSocket = () => {
       if (data.type === 'viral_alert') {
         // 添加新预警到列表顶部
         const alert = data.data
+        const now = new Date().toISOString()
         todayInsights.value.unshift({
           id: alert.id,
           type: alert.alert_level,
@@ -63,7 +106,8 @@ const connectWebSocket = () => {
           title: alert.title,
           url: alert.url,
           factors: alert.factors || [],
-          time: new Date().toLocaleString()
+          time: now.replace('T', ' ').substring(0, 16),
+          created_at: now
         })
 
         // 展示消息通知
@@ -231,8 +275,31 @@ onUnmounted(() => {
               <el-tag type="warning" size="small">实时更新</el-tag>
             </div>
           </template>
+          <!-- 筛选器 -->
+          <div class="filter-bar">
+            <el-select v-model="filterIsRead" placeholder="已读状态" clearable @change="handleFilterChange" style="width: 100px">
+              <el-option label="未读" :value="false" />
+              <el-option label="已读" :value="true" />
+            </el-select>
+            <el-select v-model="filterAlertLevel" placeholder="预警颜色" clearable @change="handleFilterChange" style="width: 120px">
+              <el-option label="黄色预警" value="yellow" />
+              <el-option label="橙色预警" value="orange" />
+              <el-option label="红色预警" value="red" />
+            </el-select>
+            <el-select v-model="filterPlatform" placeholder="平台" clearable @change="handleFilterChange" style="width: 100px">
+              <el-option label="抖音" value="douyin" />
+              <el-option label="B站" value="bilibili" />
+              <el-option label="小红书" value="xiaohongshu" />
+            </el-select>
+            <el-input v-model="filterKeyword" placeholder="关键词搜索" clearable @change="handleFilterChange" style="width: 150px" />
+            <el-radio-group v-model="sortOrder" @change="handleFilterChange">
+              <el-radio-button value="desc">最新优先</el-radio-button>
+              <el-radio-button value="asc">最近优先</el-radio-button>
+            </el-radio-group>
+          </div>
           <div class="alert-list">
             <div v-for="item in todayInsights" :key="item.id" class="alert-item" @click="handleInsightClick(item)">
+              <el-tag v-if="item.is_read" type="success" size="small">已读</el-tag>
               <el-tag :type="getAlertLevelTag(item.type)" size="small">
                 {{ getAlertLevelText(item.type) }}
               </el-tag>
@@ -240,7 +307,18 @@ onUnmounted(() => {
                 {{ getPlatformTag(item.platform).label }}
               </el-tag>
               <span class="alert-title">{{ item.title }}</span>
+              <span class="time">{{ item.time }}</span>
               <a class="open-link" @click.stop="openVideoUrl(item.url)">打开链接</a>
+            </div>
+            <!-- 翻页 -->
+            <div class="pagination-wrapper">
+              <el-pagination
+                v-model:current-page="currentPage"
+                :page-size="pageSize"
+                :total="totalCount"
+                layout="prev, pager, next"
+                @current-change="handlePageChange"
+              />
             </div>
           </div>
         </el-card>
@@ -329,7 +407,7 @@ onUnmounted(() => {
     </el-row>
 
     <!-- 预警详情弹窗 -->
-    <el-dialog v-model="alertDialogVisible" title="预警详情" width="500px">
+    <el-dialog v-model="alertDialogVisible" title="预警详情" width="500px" class="insight-dialog">
       <div class="alert-detail">
         <div class="detail-row">
           <el-tag :type="getAlertLevelTag(currentAlert.alert_level)" size="large">
@@ -352,8 +430,13 @@ onUnmounted(() => {
         </div>
       </div>
       <template #footer>
-        <el-button @click="alertDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="openVideoUrl(currentAlert.url)">打开视频链接</el-button>
+        <div class="dialog-footer">
+          <span class="dialog-date">{{ currentAlert.created_at ? currentAlert.created_at.replace('T', ' ').substring(0, 19) : '' }}</span>
+          <div class="dialog-buttons">
+            <el-button @click="alertDialogVisible = false">关闭</el-button>
+            <el-button type="primary" @click="openVideoUrl(currentAlert.url)">打开视频链接</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -531,5 +614,55 @@ onUnmounted(() => {
     font-size: 12px;
     color: var(--text-secondary);
   }
+}
+n/* 弹窗内容居中样式 */
+:deep(.insight-dialog) {
+  .el-dialog__body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 150px;
+    padding: 10px 20px;
+  }
+}
+
+.alert-detail {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 120px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+
+  .dialog-date {
+    color: #909399;
+    font-size: 14px;
+  }
+
+  .dialog-buttons {
+    display: flex;
+    gap: 10px;
+  }
+}
+
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: var(--bg-color);
+  border-radius: 4px;
+  flex-wrap: wrap;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
 }
 </style>

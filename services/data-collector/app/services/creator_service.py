@@ -44,6 +44,8 @@ class CreatorService:
             total_likes: int = None,
             video_count: int = None,
             avg_play_count: float = None,
+            last_video_date: datetime = None,
+            first_video_date: datetime = None,
             stats_updated_at: datetime = None,
     ) -> CreatorSchema:
         """
@@ -99,6 +101,10 @@ class CreatorService:
                             existing.video_count = video_count
                         if avg_play_count is not None:
                             existing.avg_play_count = avg_play_count
+                        if last_video_date is not None:
+                            existing.last_video_date = last_video_date
+                        if first_video_date is not None:
+                            existing.first_video_date = first_video_date
                         if stats_updated_at is not None:
                             existing.stats_updated_at = stats_updated_at
                         existing.is_monitored = True

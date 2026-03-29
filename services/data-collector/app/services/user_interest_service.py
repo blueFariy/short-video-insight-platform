@@ -175,6 +175,8 @@ class AlertRecordService:
         user_id: int,
         alert_level: Optional[str] = None,
         is_read: Optional[bool] = None,
+        platform: Optional[str] = None,
+        keyword: Optional[str] = None,
         page: int = 1,
         page_size: int = 20
     ) -> Dict[str, Any]:
@@ -186,6 +188,10 @@ class AlertRecordService:
                 stmt = stmt.where(ViralAlert.alert_level == alert_level)
             if is_read is not None:
                 stmt = stmt.where(ViralAlert.is_read == is_read)
+            if platform:
+                stmt = stmt.where(ViralAlert.platform == platform)
+            if keyword:
+                stmt = stmt.where(ViralAlert.title.ilike(f"%{keyword}%"))
 
             stmt = stmt.order_by(ViralAlert.created_at.desc())
 
@@ -202,6 +208,10 @@ class AlertRecordService:
                 count_stmt = count_stmt.where(ViralAlert.alert_level == alert_level)
             if is_read is not None:
                 count_stmt = count_stmt.where(ViralAlert.is_read == is_read)
+            if platform:
+                count_stmt = count_stmt.where(ViralAlert.platform == platform)
+            if keyword:
+                count_stmt = count_stmt.where(ViralAlert.title.ilike(f"%{keyword}%"))
 
             total_result = await session.execute(count_stmt)
             total = len(list(total_result.scalars().all()))

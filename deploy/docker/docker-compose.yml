@@ -1,7 +1,9 @@
 # Short Video Insight Platform - Docker Compose
-# docker compose -f deploy/docker/docker-compose.yml build data-collector
-# docker compose -f deploy/docker/docker-compose.yml up -d data-collector
-# docker exec -it short-video-data-collector /bin/bash
+# docker compose -f deploy/docker/docker-compose.yml build
+# docker compose -f deploy/docker/docker-compose.yml up -d
+# docker exec -it short-video-nginx /bin/sh
+# docker compose -f deploy/docker/docker-compose.yml restart nginx
+
 version: '3.8'
 
 services:
@@ -16,12 +18,14 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - default
 
   # Redis
   redis:
@@ -36,6 +40,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - default
 
   # Elasticsearch
   elasticsearch:
@@ -55,6 +61,28 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    networks:
+      - default
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: short-video-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
 
   # User Service
   user-service:
@@ -62,8 +90,8 @@ services:
       context: ../../services/user-service
       dockerfile: Dockerfile
     container_name: short-video-user-service
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
       - REDIS_HOST=redis
@@ -71,9 +99,9 @@ services:
     develop:
       watch:
         - action: sync
-          path: ../../services/user-service  # 监听整个服务目录
+          path: ../../services/user-service
           target: /app
-          ignore: # 排除不需要同步的目录
+          ignore:
             - __pycache__/
             - .pytest_cache/
             - .git/
@@ -82,12 +110,14 @@ services:
             - .idea/
             - .vscode/
         - action: rebuild
-          path: ../../services/user-service/requirements.txt  # 依赖变更时重建
+          path: ../../services/user-service/requirements.txt
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - default
 
   # Video Service
   video-service:
@@ -95,8 +125,8 @@ services:
       context: ../../services/video-service
       dockerfile: Dockerfile
     container_name: short-video-video-service
-    ports:
-      - "8002:8002"
+    expose:
+      - "8002"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
       - REDIS_HOST=redis
@@ -109,9 +139,9 @@ services:
     develop:
       watch:
         - action: sync
-          path: ../../services/video-service  # 监听整个服务目录
+          path: ../../services/video-service
           target: /app
-          ignore: # 排除不需要同步的目录
+          ignore:
             - __pycache__/
             - .pytest_cache/
             - .git/
@@ -120,7 +150,7 @@ services:
             - .idea/
             - .vscode/
         - action: rebuild
-          path: ../../services/video-service/requirements.txt  # 依赖变更时重建
+          path: ../../services/video-service/requirements.txt
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,6 +158,8 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+    networks:
+      - default
 
   # Insight Service
   insight-service:
@@ -135,16 +167,16 @@ services:
       context: ../../services/insight-generator
       dockerfile: Dockerfile
     container_name: short-video-insight-service
-    ports:
-      - "8003:8003"
+    expose:
+      - "8003"
     volumes:
       - ../../.env:/app/env/.env
     develop:
       watch:
         - action: sync
-          path: ../../services/insight-generator  # 监听整个服务目录
+          path: ../../services/insight-generator
           target: /app
-          ignore: # 排除不需要同步的目录
+          ignore:
             - __pycache__/
             - .pytest_cache/
             - .git/
@@ -153,11 +185,12 @@ services:
             - .idea/
             - .vscode/
         - action: rebuild
-          path: ../../services/insight-generator/requirements.txt  # 依赖变更时重建
+          path: ../../services/insight-generator/requirements.txt
     environment:
       - AI_PROVIDER=deepseek
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
-#      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+    networks:
+      - default
 
   # Data Collector Service
   data-collector:
@@ -165,21 +198,25 @@ services:
       context: ../../services/data-collector
       dockerfile: Dockerfile
     container_name: short-video-data-collector
-    ports:
-      - "8004:8004"
+    expose:
+      - "8004"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
-      - REDIS_HOST=redis
+      - REDIS_HOST=short-video-redis
       - REDIS_PORT=6379
+      - RABBITMQ_HOST=short-video-rabbitmq
+      - CELERY_BROKER_URL=redis://short-video-redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://short-video-redis:6379/0
+      - TZ=Asia/Shanghai
     volumes:
       - ../../cookies:/app/cookies
       - ../../.env:/app/env/.env
     develop:
       watch:
         - action: sync
-          path: ../../services/data-collector  # 监听整个服务目录
+          path: ../../services/data-collector
           target: /app
-          ignore: # 排除不需要同步的目录
+          ignore:
             - __pycache__/
             - .pytest_cache/
             - .git/
@@ -188,7 +225,16 @@ services:
             - .idea/
             - .vscode/
         - action: rebuild
-          path: ../../services/data-collector/requirements.txt  # 依赖变更时重建
+          path: ../../services/data-collector/requirements.txt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - default
 
   # Competitor Monitor Service
   competitor-monitor:
@@ -196,8 +242,8 @@ services:
       context: ../../services/competitor-monitor
       dockerfile: Dockerfile
     container_name: short-video-competitor-monitor
-    ports:
-      - "8005:8005"
+    expose:
+      - "8005"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
       - REDIS_HOST=redis
@@ -207,9 +253,9 @@ services:
     develop:
       watch:
         - action: sync
-          path: ../../services/competitor-monitor  # 监听整个服务目录
+          path: ../../services/competitor-monitor
           target: /app
-          ignore: # 排除不需要同步的目录
+          ignore:
             - __pycache__/
             - .pytest_cache/
             - .git/
@@ -218,7 +264,9 @@ services:
             - .idea/
             - .vscode/
         - action: rebuild
-          path: ../../services/competitor-monitor/requirements.txt  # 依赖变更时重建
+          path: ../../services/competitor-monitor/requirements.txt
+    networks:
+      - default
 
   # Report Service
   report-service:
@@ -226,8 +274,8 @@ services:
       context: ../../services/report-service
       dockerfile: Dockerfile
     container_name: short-video-report-service
-    ports:
-      - "8006:8006"
+    expose:
+      - "8006"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/short_video_insight
     volumes:
@@ -235,9 +283,9 @@ services:
     develop:
       watch:
         - action: sync
-          path: ../../services/report-service  # 监听整个服务目录
+          path: ../../services/report-service
           target: /app
-          ignore: # 排除不需要同步的目录
+          ignore:
             - __pycache__/
             - .pytest_cache/
             - .git/
@@ -246,7 +294,9 @@ services:
             - .idea/
             - .vscode/
         - action: rebuild
-          path: ../../services/report-service/requirements.txt  # 依赖变更时重建
+          path: ../../services/report-service/requirements.txt
+    networks:
+      - default
 
   # Frontend
   frontend:
@@ -254,37 +304,28 @@ services:
       context: ../../frontend
       dockerfile: Dockerfile
     container_name: short-video-frontend
-    ports:
-      - "3000:80"
+    expose:
+      - "80"
     develop:
       watch:
-        # 监听源代码目录（热重载）
         - action: sync
           path: ../../frontend/src
           target: /app/src
           ignore:
             - node_modules/
-
-        # 监听公共资源目录
         - action: sync
           path: ../../frontend/public
           target: /app/public
           ignore:
             - node_modules/
-
-        # 监听配置文件（需要重启）
         - action: sync+restart
           path: ../../frontend/vite.config.ts
           target: /app/vite.config.ts
-
         - action: sync+restart
           path: ../../frontend/index.html
           target: /app/index.html
-
-        # 依赖变更时重建
         - action: rebuild
           path: ../../frontend/package.json
-
         - action: rebuild
           path: ../../frontend/yarn.lock
         - action: rebuild
@@ -292,12 +333,46 @@ services:
     depends_on:
       - user-service
       - video-service
+    networks:
+      - default
+
+  # Nginx Reverse Proxy（新增）
+  nginx:
+    image: nginx:alpine
+    container_name: short-video-nginx
+    ports:
+      - "80:80"      # HTTP 统一入口
+      - "443:443"    # HTTPS 预留
+    volumes:
+      # 挂载 Nginx 配置文件
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # 可选：挂载 SSL 证书（如需 HTTPS）
+      # - ./nginx/ssl:/etc/nginx/ssl:ro
+      # 可选：挂载日志目录
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - user-service
+      - video-service
+      - insight-service
+      - data-collector
+      - competitor-monitor
+      - report-service
+      - frontend
+    networks:
+      - default
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
   elasticsearch_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
 
 networks:
   default:
     name: short-video-network
+    driver: bridge

@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS creators (
     avg_play_count BIGINT DEFAULT 0,
     avg_interaction_rate FLOAT,
     main_category VARCHAR(50),
+    last_video_date TIMESTAMPTZ DEFAULT null,
+    first_video_date TIMESTAMPTZ DEFAULT null,
     stats_updated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     is_monitored BOOLEAN DEFAULT FALSE,
@@ -51,7 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_creators_monitored ON creators(is_monitored);
 CREATE TABLE IF NOT EXISTS videos (
     id BIGSERIAL PRIMARY KEY,
     platform VARCHAR(20) NOT NULL,
-    video_id VARCHAR(100) NOT NULL,
+    video_id VARCHAR(100) UNIQUE NOT NULL,
     video_url TEXT NOT NULL,
     title VARCHAR(500),
     description TEXT,
@@ -102,7 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_video_scripts_video ON video_scripts(video_id);
 -- Video Insights table
 CREATE TABLE IF NOT EXISTS video_insights (
     id BIGSERIAL PRIMARY KEY,
-    video_id BIGINT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    video_id VARCHAR(100) NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
     ai_summary TEXT,
     hook_3s TEXT,
     hook_type VARCHAR(30),
@@ -114,6 +116,7 @@ CREATE TABLE IF NOT EXISTS video_insights (
     comment_high_freq TEXT[],
     user_feedback JSONB,
     viral_factors JSONB,
+    improvements TEXT[],
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -126,7 +129,7 @@ CREATE TABLE IF NOT EXISTS collections (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     item_type VARCHAR(20) NOT NULL,
-    item_id BIGINT NOT NULL,
+    item_id VARCHAR(100) NOT NULL,
     notes TEXT,
     tags TEXT[],
     folder VARCHAR(100),

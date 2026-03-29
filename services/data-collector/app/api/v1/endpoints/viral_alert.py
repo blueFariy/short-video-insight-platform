@@ -49,6 +49,8 @@ class UserInterestUpdate(BaseModel):
 async def get_alerts(
     alert_level: Optional[str] = Query(None, description="预警级别筛选"),
     is_read: Optional[bool] = Query(None, description="已读状态筛选"),
+    platform: Optional[str] = Query(None, description="平台筛选"),
+    keyword: Optional[str] = Query(None, description="关键词搜索(标题)"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     current_user = Depends(get_current_user_id)
@@ -61,6 +63,8 @@ async def get_alerts(
         user_id=current_user,
         alert_level=alert_level,
         is_read=is_read,
+        platform=platform,
+        keyword=keyword,
         page=page,
         page_size=page_size
     )
@@ -79,7 +83,7 @@ async def get_unread_count(
     获取用户未读预警数量
     """
     service = get_alert_record_service()
-    count = await service.get_unread_count(current_user.id)
+    count = await service.get_unread_count(current_user)
     return {
         "code": 200,
         "message": "success",
@@ -96,7 +100,7 @@ async def mark_alert_read(
     标记指定预警为已读
     """
     service = get_alert_record_service()
-    success = await service.mark_as_read(alert_id, current_user.id)
+    success = await service.mark_as_read(alert_id, current_user)
 
     if not success:
         raise HTTPException(status_code=404, detail="预警记录不存在")
@@ -123,7 +127,7 @@ async def mark_all_alerts_read(
     )
 
     for alert in result.get("items", []):
-        await service.mark_as_read(alert["id"], current_user.id)
+        await service.mark_as_read(alert["id"], current_user)
 
     return {
         "code": 200,
@@ -166,7 +170,7 @@ async def get_user_interest(
     获取当前用户的兴趣配置
     """
     service = get_user_interest_service()
-    interest = await service.get_user_interest(current_user.id)
+    interest = await service.get_user_interest(current_user)
 
     if not interest:
         # 返回默认配置

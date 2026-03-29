@@ -329,6 +329,27 @@ async def list_videos(
         "total": len(videos)
     })
 
+@router.get("/videos/{video_id}/save", summary="手动保存视频到数据库")
+async def save_video_to_db(video_id: str, platform: str):
+    """手动保存指定视频到数据库"""
+
+    try:
+        adapter = get_platform_adapter(platform)
+        video = await adapter.get_video_detail(video_id)
+
+        if not video:
+            raise NotFoundException(f"Video not found: {video_id}")
+
+        saved_count = await collector_service.save_videos([video], platform)
+
+        return success_response(data={
+            "video": video.to_dict(),
+            "saved": saved_count
+        })
+
+    except Exception as e:
+        logger.error(f"Save video failed: {e}")
+        raise ValidationException(f"保存视频失败: {str(e)}")
 
 @router.get("/videos/{video_id}", summary="获取视频详情")
 async def get_video(video_id: str):
@@ -529,30 +550,6 @@ async def collect_bilibili_creator(creator_id: str, limit: int = 50):
     except Exception as e:
         logger.error(f"Collect creator failed: {e}")
         raise ValidationException(f"采集失败: {str(e)}")
-
-
-@router.get("/videos/{video_id}/save", summary="手动保存视频到数据库")
-async def save_video_to_db(video_id: str, platform: str):
-    """手动保存指定视频到数据库"""
-
-    try:
-        adapter = get_platform_adapter(platform)
-        video = await adapter.get_video_detail(video_id)
-
-        if not video:
-            raise NotFoundException(f"Video not found: {video_id}")
-
-        saved_count = await collector_service.save_videos([video], platform)
-
-        return success_response(data={
-            "video": video.to_dict(),
-            "saved": saved_count
-        })
-
-    except Exception as e:
-        logger.error(f"Save video failed: {e}")
-        raise ValidationException(f"保存视频失败: {str(e)}")
-
 
 # Scheduler Endpoints
 @router.get("/scheduler/status", summary="获取调度器状态")

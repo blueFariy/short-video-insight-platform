@@ -319,6 +319,8 @@ CREATE TABLE video_insights (
     -- 爆款因子（用于预测）
     viral_factors JSONB,  -- 爆款特征权重
     
+    improvements TEXT[],  -- 改进建议
+    
     created_at TIMESTAMPTZ DEFAULT NOW(),
     
     INDEX idx_video_insights_video (video_id),
@@ -425,6 +427,91 @@ CREATE TABLE trend_reports (
     
     INDEX idx_trend_reports_period (period_start, period_end),
     INDEX idx_trend_reports_type (report_type)
+);
+```
+
+#### 3.2.9 爆款雷达核心表
+
+```sql
+-- 视频指标时序快照 - 存储分钟级指标变化
+CREATE TABLE video_metric_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    video_id VARCHAR(100) NOT NULL,
+    platform VARCHAR(20) NOT NULL,
+    play_count BIGINT DEFAULT 0,
+    like_count BIGINT DEFAULT 0,
+    comment_count BIGINT DEFAULT 0,
+    share_count BIGINT DEFAULT 0,
+    danmaku_count BIGINT DEFAULT 0,
+    coin_count BIGINT DEFAULT 0,
+    collect_count BIGINT DEFAULT 0,
+    engagement_rate FLOAT DEFAULT 0.0,
+    like_ratio FLOAT DEFAULT 0.0,
+    comment_ratio FLOAT DEFAULT 0.0,
+    share_ratio FLOAT DEFAULT 0.0,
+    play_growth_rate FLOAT DEFAULT 0.0,  -- 相比上一快照的增长率
+    like_growth_rate FLOAT DEFAULT 0.0,
+    comment_growth_rate FLOAT DEFAULT 0.0,
+    snapshot_time TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    INDEX idx_snapshots_video (video_id),
+    INDEX idx_snapshots_time (snapshot_time),
+    INDEX idx_snapshot_video_time (video_id, snapshot_time)
+);
+
+-- 用户兴趣配置
+CREATE TABLE user_interests (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE,
+    category_weights JSONB DEFAULT '{}',  -- 关注领域权重 {美食: 0.8, 美妆: 0.6}
+    interest_keywords TEXT[],  -- 关注的关键词
+    platforms TEXT[],  -- 关注的平台 ['douyin', 'bilibili', 'xiaohongshu']
+    alert_levels TEXT[],  -- 接收的预警级别 ['yellow', 'orange', 'red']
+    notification_channels TEXT[],  -- 通知渠道 ['app', 'email', 'wechat']
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 爆款预警记录
+CREATE TABLE viral_alerts (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    video_id VARCHAR(100) NOT NULL,
+    platform VARCHAR(20),
+    title VARCHAR(500),
+    cover_url TEXT,
+    video_url TEXT,
+    alert_level VARCHAR(20) NOT NULL,  -- 'yellow', 'orange', 'red'
+    growth_stage VARCHAR(20),  -- 'embryo', 'takeoff', 'explosion', 'plateau'
+    growth_rate FLOAT,  -- 增长率
+    growth_score FLOAT,  -- 爆款评分
+    authenticity FLOAT,  -- 数据真实性
+    message TEXT,  -- 预警消息
+    factors JSONB,  -- 爆款因素列表
+    is_read BOOLEAN DEFAULT FALSE,
+    is_dismissed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    INDEX idx_viral_alerts_user (user_id),
+    INDEX idx_viral_alerts_video (video_id),
+    INDEX idx_alert_user_read (user_id, is_read),
+    INDEX idx_alert_user_time (user_id, created_at)
+);
+
+-- 分类基准数据
+CREATE TABLE category_benchmarks (
+    id BIGSERIAL PRIMARY KEY,
+    platform VARCHAR(20) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    avg_play_count BIGINT DEFAULT 0,
+    avg_engagement_rate FLOAT DEFAULT 0.0,
+    avg_like_ratio FLOAT DEFAULT 0.0,
+    viral_threshold_play BIGINT DEFAULT 100000,  -- 播放量阈值
+    viral_threshold_growth FLOAT DEFAULT 0.5,  -- 增长率阈值 (50%)
+    period_start TIMESTAMPTZ,
+    period_end TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(platform, category)
 );
 ```
 

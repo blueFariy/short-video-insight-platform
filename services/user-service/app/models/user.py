@@ -155,7 +155,7 @@ class VideoInsight(Base):
     __tablename__ = "video_insights"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    video_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False, index=True)
+    video_id: Mapped[String] = mapped_column(String, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False, index=True)
     ai_summary: Mapped[Optional[str]] = mapped_column(Text)
     hook_3s: Mapped[Optional[str]] = mapped_column(Text)
     hook_type: Mapped[Optional[str]] = mapped_column(String(30), index=True)

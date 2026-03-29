@@ -17,7 +17,7 @@ class VideoInsight(Base):
     __tablename__ = "video_insights"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    video_id = Column(BigInteger, nullable=False, index=True)
+    video_id = Column(String, nullable=False, index=True)
 
     # AI总结
     ai_summary = Column(Text)

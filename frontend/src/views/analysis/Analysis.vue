@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import service, { videoService, insightService, API_URL } from '@/api'
+import service, {videoService, insightService, API_URL} from '@/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -41,7 +41,7 @@ const fetchCollections = async () => {
 const fetchAnalysisHistory = async () => {
   historyLoading.value = true
   try {
-    const res = await service.get(API_URL.INSIGHT.VIDEO_INSIGHT_ALL, {
+    const res = await insightService.get(API_URL.INSIGHT.VIDEO_INSIGHT_ALL, {
       params: { page: 1, page_size: 100 }
     }) as any
     const items = res?.items || []
@@ -138,7 +138,7 @@ const viewFromHistory = async (item: any) => {
 
   try {
     // 从后端获取完整的insight详情
-    const res = await service.get(API_URL.INSIGHT.VIDEO_INSIGHT_DETAIL(item.video_id)) as any
+    const res = await insightService.get(API_URL.INSIGHT.VIDEO_INSIGHT_DETAIL(item.video_id)) as any
 
     if (res) {
       const videoInfo = res.video_info || {}

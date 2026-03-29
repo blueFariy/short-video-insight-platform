@@ -160,7 +160,7 @@ class ScheduledTaskService:
         return task is not None
 
     async def trigger_task(self, task_id: str) -> bool:
-        """手动触发任务执行"""
+        """手动触发任务执行 - 直接调用Celery"""
         task = await self.get_task(task_id)
         if not task:
             return False

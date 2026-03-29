@@ -312,7 +312,7 @@ const handleDeleteTask = async (task: any) => {
       type: 'warning'
     })
 
-    await collectorService.delete(API_URL.COLLECTOR.SCHEDULER_TASK_DELETE(task.task_id))
+    await collectorService(API_URL.COLLECTOR.SCHEDULER_TASK_DELETE(task.task_id))
     ElMessage.success('任务已删除')
     fetchScheduledTasks()
   } catch (error: any) {
@@ -389,7 +389,7 @@ const handleDeleteAccount = async (account: any) => {
       type: 'warning'
     })
 
-    await collectorService.delete(`${API_URL.COLLECTOR.ACCOUNT_DELETE}?platform=${account.platform}&creator_id=${account.creator_id || account.creator_id}`)
+    await collectorService.delete(`${API_URL.COLLECTOR.ACCOUNT_DELETE}?platform=${account.platform}&creator_id=${account.creator_id}`)
     ElMessage.success('账号已删除')
     fetchAccounts()
   } catch (error: any) {

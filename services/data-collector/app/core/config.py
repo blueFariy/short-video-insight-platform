@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
 
+    # RabbitMQ (for task queue buffering)
+    RABBITMQ_HOST: str = "rabbitmq"
+    RABBITMQ_PORT: int = 5672
+    RABBITMQ_USER: str = "guest"
+    RABBITMQ_PASSWORD: str = "guest"
+    RABBITMQ_VHOST: str = "/"
+    RABBITMQ_QUEUE: str = "task_trigger_queue"
+    # 数据库写入缓冲队列
+    RABBITMQ_DB_QUEUE: str = "db_write_queue"
+
     # Elasticsearch
     ELASTICSEARCH_HOST: str = "localhost"
     ELASTICSEARCH_PORT: int = 9200

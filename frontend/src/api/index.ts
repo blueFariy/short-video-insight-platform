@@ -5,10 +5,10 @@ import axios, {AxiosInstance, AxiosResponse} from 'axios'
 import {ElMessage} from 'element-plus'
 
 // Base URL configuration
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8001'
-const VIDEO_BASE_URL = (import.meta as any).env?.VITE_VIDEO_BASE_URL || 'http://localhost:8002'
-const INSIGHT_BASE_URL = (import.meta as any).env?.VITE_INSIGHT_BASE_URL || 'http://localhost:8003'
-const COLLECTOR_BASE_URL = (import.meta as any).env?.VITE_COLLECTOR_BASE_URL || 'http://localhost:8004'
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || '/user_service/api/v1'
+const VIDEO_BASE_URL = (import.meta as any).env?.VITE_VIDEO_BASE_URL || '/video_service/api/v1'
+const INSIGHT_BASE_URL = (import.meta as any).env?.VITE_INSIGHT_BASE_URL || '/insight_service/api/v1'
+const COLLECTOR_BASE_URL = (import.meta as any).env?.VITE_COLLECTOR_BASE_URL || '/data_collector/api/v1'
 // 未使用的URL配置，保留供将来使用
 // const MONITOR_BASE_URL = (import.meta as any).env?.VITE_MONITOR_BASE_URL || 'http://localhost:8005'
 // const REPORT_BASE_URL = (import.meta as any).env?.VITE_REPORT_BASE_URL || 'http://localhost:8006'
@@ -170,103 +170,103 @@ export default service
 export const API_URL = {
     // User Service (port 8001)
     USER: {
-        LOGIN: '/api/v1/users/login',
-        REGISTER: '/api/v1/users/register',
-        PROFILE: '/api/v1/users/profile',
-        CHANGE_PASSWORD: '/api/v1/users/password',
-        COLLECTIONS: '/api/v1/collections',
-        COLLECTION_FOLDERS: '/api/v1/collections/folders',
-        ADD_COLLECTION: '/api/v1/collections',
-        UPDATE_COLLECTION: (id: string) => `/api/v1/collections/${id}`,
-        DELETE_COLLECTION: (id: string) => `/api/v1/collections/${id}`,
+        LOGIN: '/users/login',
+        REGISTER: '/users/register',
+        PROFILE: '/users/profile',
+        CHANGE_PASSWORD: '/users/password',
+        COLLECTIONS: '/collections',
+        COLLECTION_FOLDERS: '/collections/folders',
+        ADD_COLLECTION: '/collections',
+        UPDATE_COLLECTION: (id: string) => `/collections/${id}`,
+        DELETE_COLLECTION: (id: string) => `/collections/${id}`,
     },
 
     // Video Service (port 8002)
     VIDEO: {
-        PROCESS: `${VIDEO_BASE_URL}/api/v1/videos/process`,
-        SEARCH: `${VIDEO_BASE_URL}/api/v1/videos/search`,
-        LIST: `${VIDEO_BASE_URL}/api/v1/videos`,
-        DETAIL: (id: string) => `${VIDEO_BASE_URL}/api/v1/videos/${id}`
+        PROCESS: `/videos/process`,
+        SEARCH: `/videos/search`,
+        LIST: `/videos`,
+        DETAIL: (id: string) => `/videos/${id}`
     },
 
     // Insight Service (port 8003)
     INSIGHT: {
-        GOLDEN_HOOK: `${INSIGHT_BASE_URL}/api/v1/insights/golden-hook`,
-        SCRIPT_STRUCTURE: `${INSIGHT_BASE_URL}/api/v1/insights/script-structure`,
-        SENTIMENT: `${INSIGHT_BASE_URL}/api/v1/insights/sentiment`,
-        COMPREHENSIVE: `${INSIGHT_BASE_URL}/api/v1/insights/comprehensive`,
-        TEMPLATES: `${INSIGHT_BASE_URL}/api/v1/insights/templates`,
-        VIDEO_INSIGHTS: `${INSIGHT_BASE_URL}/api/v1/insights/video-insights`,
-        VIDEO_INSIGHT_DETAIL: (videoId: number) => `${INSIGHT_BASE_URL}/api/v1/insights/video-insights/${videoId}`,
-        VIDEO_INSIGHT_ALL: `${INSIGHT_BASE_URL}/api/v1/insights/video-insights/all`,
+        GOLDEN_HOOK: `/insights/golden-hook`,
+        SCRIPT_STRUCTURE: `/insights/script-structure`,
+        SENTIMENT: `/insights/sentiment`,
+        COMPREHENSIVE: `/insights/comprehensive`,
+        TEMPLATES: `/insights/templates`,
+        VIDEO_INSIGHTS: `/insights/video-insights`,
+        VIDEO_INSIGHT_DETAIL: (videoId: number) => `/insights/video-insights/${videoId}`,
+        VIDEO_INSIGHT_ALL: `/insights/video-insights/all`,
     },
 
     // Data Collector (port 8004)
     COLLECTOR: {
-        ACCOUNTS: `${COLLECTOR_BASE_URL}/api/v1/collector/accounts`,
-        ACCOUNT_DETAIL: `${COLLECTOR_BASE_URL}/api/v1/collector/accounts/detail`,
-        ACCOUNT_CREATE: `${COLLECTOR_BASE_URL}/api/v1/collector/accounts`,
-        ACCOUNT_UPDATE: `${COLLECTOR_BASE_URL}/api/v1/collector/accounts/detail`,
-        ACCOUNT_DELETE: `${COLLECTOR_BASE_URL}/api/v1/collector/accounts/detail`,
-        COLLECT: `${COLLECTOR_BASE_URL}/api/v1/collector/collect`,
-        COLLECT_ALL: `${COLLECTOR_BASE_URL}/api/v1/collector/collect/all`,
-        VIDEOS: `${COLLECTOR_BASE_URL}/api/v1/collector/videos`,
-        VIDEO_DETAIL: (id: string) => `${COLLECTOR_BASE_URL}/api/v1/collector/videos/${id}`,
-        VIDEO_SAVE: (id: string, platform: string) => `${COLLECTOR_BASE_URL}/api/v1/collector/videos/${id}/save?platform=${platform}`,
-        SEARCH_VIDEOS: `${COLLECTOR_BASE_URL}/api/v1/collector/videos/search`,
+        ACCOUNTS: `/collector/accounts`,
+        ACCOUNT_DETAIL: `/collector/accounts/detail`,
+        ACCOUNT_CREATE: `/collector/accounts`,
+        ACCOUNT_UPDATE: `/collector/accounts/detail`,
+        ACCOUNT_DELETE: `/collector/accounts/detail`,
+        COLLECT: `/collector/collect`,
+        COLLECT_ALL: `/collector/collect/all`,
+        VIDEOS: `/collector/videos`,
+        VIDEO_DETAIL: (id: string) => `/collector/videos/${id}`,
+        VIDEO_SAVE: (id: string, platform: string) => `/collector/videos/${id}/save?platform=${platform}`,
+        SEARCH_VIDEOS: `/collector/videos/search`,
         // 手动采集
-        MANUAL_COLLECT: `${COLLECTOR_BASE_URL}/api/v1/collector/manual/collect`,
-        BILIBILI_REGIONS: `${COLLECTOR_BASE_URL}/api/v1/collector/bilibili/regions`,
-        BILIBILI_CREATOR: (id: string) => `${COLLECTOR_BASE_URL}/api/v1/collector/bilibili/creator/${id}`,
-        BILIBILI_CREATOR_COLLECT: (id: string) => `${COLLECTOR_BASE_URL}/api/v1/collector/bilibili/creator/collect?creator_id=${id}`,
-        SCHEDULER_STATUS: `${COLLECTOR_BASE_URL}/api/v1/collector/scheduler/status`,
-        SCHEDULER_RUN_TASK: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/collector/scheduler/tasks/${taskId}/run`,
+        MANUAL_COLLECT: `/collector/manual/collect`,
+        BILIBILI_REGIONS: `/collector/bilibili/regions`,
+        BILIBILI_CREATOR: (id: string) => `/collector/bilibili/creator/${id}`,
+        BILIBILI_CREATOR_COLLECT: (id: string) => `/collector/bilibili/creator/collect?creator_id=${id}`,
+        SCHEDULER_STATUS: `/collector/scheduler/status`,
+        SCHEDULER_RUN_TASK: (taskId: string) => `/collector/scheduler/tasks/${taskId}/run`,
         // 定时任务管理 (新接口)
-        SCHEDULER_TASKS: `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks`,
-        SCHEDULER_TASK_DETAIL: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}`,
-        SCHEDULER_TASK_CREATE: `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks`,
-        SCHEDULER_TASK_UPDATE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}`,
-        SCHEDULER_TASK_DELETE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}`,
-        SCHEDULER_TASK_ENABLE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}/enable`,
-        SCHEDULER_TASK_DISABLE: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}/disable`,
-        SCHEDULER_TASK_TRIGGER: (taskId: string) => `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/${taskId}/trigger`,
-        SCHEDULER_TASK_DEFINITIONS: `${COLLECTOR_BASE_URL}/api/v1/scheduler/tasks/definitions`,
+        SCHEDULER_TASKS: `/scheduler/tasks`,
+        SCHEDULER_TASK_DETAIL: (taskId: string) => `/scheduler/tasks/${taskId}`,
+        SCHEDULER_TASK_CREATE: `/scheduler/tasks`,
+        SCHEDULER_TASK_UPDATE: (taskId: string) => `/scheduler/tasks/${taskId}`,
+        SCHEDULER_TASK_DELETE: (taskId: string) => `/scheduler/tasks/${taskId}`,
+        SCHEDULER_TASK_ENABLE: (taskId: string) => `/scheduler/tasks/${taskId}/enable`,
+        SCHEDULER_TASK_DISABLE: (taskId: string) => `/scheduler/tasks/${taskId}/disable`,
+        SCHEDULER_TASK_TRIGGER: (taskId: string) => `/scheduler/tasks/${taskId}/trigger`,
+        SCHEDULER_TASK_DEFINITIONS: `/scheduler/tasks/definitions`,
         // 爆款视频
-        VIRAL_VIDEOS: `${COLLECTOR_BASE_URL}/api/v1/collector/videos/viral`,
+        VIRAL_VIDEOS: `/collector/videos/viral`,
         // 图片代理 - 解决B站图片403问题
-        IMAGE_PROXY: `${COLLECTOR_BASE_URL}/api/v1/collector/proxy/image`,
+        IMAGE_PROXY: `/collector/proxy/image`,
         // 用户兴趣配置
-        USER_INTEREST_GET: `${COLLECTOR_BASE_URL}/api/v1/viral/user/interest`,
-        USER_INTEREST_UPDATE: `${COLLECTOR_BASE_URL}/api/v1/viral/user/interest`,
-        ALERTS: `${COLLECTOR_BASE_URL}/api/v1/viral/alerts`
+        USER_INTEREST_GET: `/viral/user/interest`,
+        USER_INTEREST_UPDATE: `/viral/user/interest`,
+        ALERTS: `/viral/alerts`
     },
 
     // Competitor Monitor (port 8005)
     MONITOR: {
-        METRICS: '/api/v1/monitor/metrics',
-        METRICS_DETAIL: (id: string) => '/api/v1/monitor/metrics/' + id,
-        METRICS_TREND: (id: string) => '/api/v1/monitor/metrics/' + id + '/trend',
-        METRICS_COMPARE: '/api/v1/monitor/metrics/compare',
-        ALERTS: '/api/v1/monitor/alerts',
-        CHECK_ALERTS: (id: string) => '/api/v1/monitor/alerts/check/' + id,
-        ALERT_ACK: (id: string) => '/api/v1/monitor/alerts/' + id + '/acknowledge',
-        ALERT_RESOLVE: (id: string) => '/api/v1/monitor/alerts/' + id + '/resolve'
+        METRICS: '/monitor/metrics',
+        METRICS_DETAIL: (id: string) => '/monitor/metrics/' + id,
+        METRICS_TREND: (id: string) => '/monitor/metrics/' + id + '/trend',
+        METRICS_COMPARE: '/monitor/metrics/compare',
+        ALERTS: '/monitor/alerts',
+        CHECK_ALERTS: (id: string) => '/monitor/alerts/check/' + id,
+        ALERT_ACK: (id: string) => '/monitor/alerts/' + id + '/acknowledge',
+        ALERT_RESOLVE: (id: string) => '/monitor/alerts/' + id + '/resolve'
     },
 
     // Report Service (port 8006)
     REPORT: {
-        STATS_OVERVIEW: '/api/v1/reports/statistics/overview',
-        STATS_PLATFORMS: '/api/v1/reports/statistics/platforms',
-        STATS_CATEGORIES: '/api/v1/reports/statistics/categories',
-        STATS_TIME: '/api/v1/reports/statistics/time',
-        STATS_TOP: '/api/v1/reports/statistics/top',
-        STATS_ENGAGEMENT: '/api/v1/reports/statistics/engagement',
-        REPORTS: '/api/v1/reports/reports',
-        REPORT_DETAIL: (id: string) => `/api/v1/reports/reports/${id}`,
-        GENERATE_VIDEO: '/api/v1/reports/reports/generate/video',
-        GENERATE_COMPETITOR: '/api/v1/reports/reports/generate/competitor',
-        GENERATE_TREND: '/api/v1/reports/reports/generate/trend',
-        EXPORT: (id: string) => `/api/v1/reports/reports/${id}/export`,
-        EXPORT_FORMATS: '/api/v1/reports/export/formats'
+        STATS_OVERVIEW: '/reports/statistics/overview',
+        STATS_PLATFORMS: '/reports/statistics/platforms',
+        STATS_CATEGORIES: '/reports/statistics/categories',
+        STATS_TIME: '/reports/statistics/time',
+        STATS_TOP: '/reports/statistics/top',
+        STATS_ENGAGEMENT: '/reports/statistics/engagement',
+        REPORTS: '/reports/reports',
+        REPORT_DETAIL: (id: string) => `/reports/reports/${id}`,
+        GENERATE_VIDEO: '/reports/reports/generate/video',
+        GENERATE_COMPETITOR: '/reports/reports/generate/competitor',
+        GENERATE_TREND: '/reports/reports/generate/trend',
+        EXPORT: (id: string) => `/reports/reports/${id}/export`,
+        EXPORT_FORMATS: '/reports/export/formats'
     }
 }

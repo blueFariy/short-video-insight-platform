@@ -229,7 +229,7 @@ class CollectionService:
         # 为每个收藏项获取视频详情 - 从videos表查询
         from sqlalchemy import text
         for collection in collections:
-            if collection.item_type == "video" and collection.item_id:
+            if collection.item_id:
                 # 查询视频信息 - 使用videos表
                 video_result = await db.execute(
                     text("""
@@ -244,7 +244,8 @@ class CollectionService:
                     {"video_id": str(collection.item_id)}
                 )
                 video_row = video_result.fetchone()
-                if video_row:
+                # 只有当 video_row 存在时才查询 VideoInsight
+                if video_row is not None:
                     collection.video_info = {
                         "platform": video_row.platform,
                         "video_id": video_row.video_id,
@@ -278,7 +279,11 @@ class CollectionService:
                         "creator_name": "",
                         "duration": 0
                     }
-                insight_result = await db.execute(select(VideoInsight).where(VideoInsight.video_id == video_row.id))
+                    # 跳过 VideoInsight 查询
+                    continue
+
+                # 查询 VideoInsight
+                insight_result = await db.execute(select(VideoInsight).where(VideoInsight.video_id == video_row.video_id))
                 if insight_result.scalar_one_or_none():
                     collection.video_info["is_analysis"] = True
 

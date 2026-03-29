@@ -301,7 +301,7 @@ async def save_video_insight(
         video = existing_video.scalar_one_or_none()
 
         existing = await db.execute(
-            Select(VideoInsight).where(VideoInsight.video_id == video.id)
+            Select(VideoInsight).where(VideoInsight.video_id == video.video_id)
         )
         if result := existing.scalar_one_or_none():
             return success_response(data={
@@ -311,7 +311,7 @@ async def save_video_insight(
             })
 
         insight = VideoInsight(
-            video_id=video.id,
+            video_id=video.video_id,
             ai_summary=request.ai_summary,
             hook_3s=request.hook_3s,
             hook_type=request.hook_type,
@@ -376,7 +376,7 @@ async def get_all_insights(
 
     # 构建查询 - 联合Video表获取视频信息
     stmt = select(VideoInsight, Video).join(
-        Video, VideoInsight.video_id == Video.id, isouter=True
+        Video, VideoInsight.video_id == Video.video_id, isouter=True
     )
     for key, value in filters.items():
         stmt = stmt.where(getattr(VideoInsight, key) == value)
@@ -455,14 +455,14 @@ async def get_all_insights(
 
 @router.get("/video-insights/{video_id}", summary="获取视频洞察详情")
 async def get_video_insight(
-        video_id: int,
+        video_id: str,
         db: AsyncSession = Depends(get_db)
 ):
     """获取视频的最新洞察"""
     from sqlalchemy import select, desc
     result = await db.execute(
         select(VideoInsight, Video).join(
-            Video, VideoInsight.video_id == Video.id, isouter=True
+            Video, VideoInsight.video_id == Video.video_id, isouter=True
         ).where(VideoInsight.video_id == video_id)
         .order_by(desc(VideoInsight.created_at))
         .limit(1)

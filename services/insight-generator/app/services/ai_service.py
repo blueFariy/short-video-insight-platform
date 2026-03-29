@@ -173,6 +173,7 @@ class AIService:
         ]
 
         response = await self.chat(messages, system_prompt=prompt)
+        logger.info(f"ai response（{self.provider}）: {response}")
         return self._parse_analysis_response(response, analysis_type)
 
     def _build_analysis_prompt(self, analysis_type: str) -> str:
