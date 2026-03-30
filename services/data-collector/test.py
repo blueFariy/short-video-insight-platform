@@ -1,13 +1,14 @@
 
-def a(**kwargs):
-    print([k for k in kwargs])
 
-if __name__ == "__main__":
-    # from app.tasks.hot_scan import scan_all_platforms
-    #
-    # scan_all_platforms()
-    kwargs = {
-        "a": 1,
-        "b": 2
-    }
-    a(**kwargs)
+if __name__ == '__main__':
+    from app.adapters.api.bilibili_api import get_videos_zones
+
+    new_videos = []
+
+    # B站分区视频扫描
+    bilibili_rids = []
+    zones = get_videos_zones()
+    bilibili_rids.extend(zones.keys())
+    for zone in zones.values():
+        bilibili_rids.extend(zone.values())
+    bilibili_rids = bilibili_rids[2:]

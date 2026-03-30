@@ -6,9 +6,11 @@ import sys
 sys.path.insert(0, '.')
 
 from app.adapters import get_platform_adapter
+from app.adapters.douyin_adapter import  get_douyin_adapter
 from app.services.cleaning_pipeline import cleaning_pipeline
 from app.services.viral_detector import viral_detector
 
+adapter = get_douyin_adapter(cookie="../../cookies/cookies_douyin.txt")
 
 async def scan_douyin_hot():
     """测试抖音热搜采集"""
@@ -16,7 +18,6 @@ async def scan_douyin_hot():
     print("Testing Douyin Hot Search Scan")
     print("=" * 50)
 
-    adapter = get_platform_adapter("douyin")
     hot_videos = await adapter.get_trending_videos(limit=10)
 
     print(f"\nFetched {len(hot_videos)} hot search items")
@@ -47,7 +48,6 @@ async def search_videos():
     print("Testing Douyin Video Search")
     print("=" * 50)
 
-    adapter = get_platform_adapter("douyin")
     videos = await adapter.search_videos(
         keyword="美食",
         limit=5,
@@ -75,7 +75,6 @@ async def get_video_detail():
     print("=" * 50)
 
     # 先搜索一个视频获取ID
-    adapter = get_platform_adapter("douyin")
     video = await adapter.get_video_detail('7614451308724014370')
     if video:
         print(f"\nTitle: {video.title}")
@@ -92,8 +91,6 @@ async def get_creator_info():
     print("\n" + "=" * 50)
     print("Testing Douyin Creator Info")
     print("=" * 50)
-
-    adapter = get_platform_adapter("douyin")
 
     # 先搜索视频获取创作者ID
     videos = await adapter.search_videos(keyword="美食", limit=1)

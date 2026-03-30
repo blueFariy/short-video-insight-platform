@@ -224,6 +224,29 @@ async def scan_bilibili_hot_with_creator():
 
     return hot_videos
 
+async def scan_bilibili_regions():
+    """测试B站热搜/排行榜采集"""
+    print("=" * 50)
+    print("Testing Bilibili Hot/Ranking Scan")
+    print("=" * 50)
+
+    # 测试全站排行榜
+    hot_videos = await adapter.get_region_videos(1)
+
+    print(f"\nFetched {len(hot_videos)} trending videos from Bilibili")
+    print("\n--- Sample Data ---")
+    # for video in hot_videos:
+    #     creator = await get_creator_info_id(video.creator_id)
+    #     time.sleep(3)
+    #     print(f"\nTitle: {video.title}")
+    #     print(f"BVID: {video.video_id}")
+    #     print(f"Play Count: {video.metrics.play_count}")
+    #     print(f"Like Count: {video.metrics.like_count}")
+    #     print(f"Danmaku Count: {video.metrics.danmaku_count}")
+    #     print(f"Engagement Rate: {video.metrics.engagement_rate:.4f}")
+
+    return hot_videos
+
 async def main():
     """运行所有测试"""
     print("\n" + "=" * 60)
@@ -270,7 +293,7 @@ async def main():
         results['creator'] = False
     creator = results['creator']
 
-    result = await viral_detector.detect(video, creator)
+    result = await scan_bilibili_regions()
     # # 6. 测试创作者视频列表
     # try:
     #     results['creator_videos'] = await get_creator_videos()
@@ -284,6 +307,8 @@ async def main():
     # except Exception as e:
     #     print(f"ERROR in comments: {e}")
     #     results['comments'] = False
+    print("````````````````````````````````````")
+    print(result)
 
     # 汇总结果
     print("\n" + "=" * 60)

@@ -48,17 +48,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
 
-    # Start scheduler
+    # Start scheduler (从数据库加载任务并通过 Celery 触发执行)
     from app.services.scheduler_service import scheduler_service
 
-    # Add default collection task
-    await scheduler_service.add_task(
-        task_id="auto_collect",
-        name="自动采集任务",
-        func=lambda: None,  # Demo task
-        interval=settings.COLLECTION_INTERVAL,
-        enabled=False  # Disabled by default
-    )
+    # scheduler_service 现在会自动从数据库加载任务，不需要手动添加
+    # 移除了之前的空任务添加逻辑
 
     await scheduler_service.start()
 

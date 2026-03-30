@@ -1,15 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(docker exec short-video-redis redis-cli -a postgres llen viral_radar)",
-      "Bash(docker exec short-video-data-collector ls -la /var/log/supervisor/)",
-      "Bash(docker exec short-video-data-collector ls /var/log/supervisor/)",
-      "Bash(docker exec -it short-video-data-collector ls -la /var/log/)",
-      "Bash(docker exec short-video-data-collector sh -c \"ls -la /var/log/supervisor/ 2>&1\")",
-      "Bash(docker exec short-video-data-collector sh -c \"tail -50 /var/log/supervisor/celery-worker_error.log\")",
-      "Bash(docker exec short-video-postgres psql -U postgres -d short_video_insight -c \"SELECT COUNT(*) FROM videos;\")",
-      "Bash(docker exec short-video-postgres psql -U postgres -d short_video_insight -c \"SELECT id, video_id, title, created_at FROM videos ORDER BY created_at DESC LIMIT 5;\")",
-      "Bash(docker exec short-video-data-collector sh -c \"ls -la /var/log/supervisor/\")"
+      "Bash(cd D:ProgramPyCharm 2024.3.6pythonProjectshort-video-insight-platformdeploydocker)",
+      "Bash(docker-compose build data-collector)",
+      "Bash(docker-compose up -d data-collector)",
+      "Bash(docker-compose -f D:/Program/PyCharm 2024.3.6/pythonProject/short-video-insight-platform/deploy/docker/docker-compose.yml build data-collector)",
+      "Bash(docker-compose -f D:/Program/PyCharm 2024.3.6/pythonProject/short-video-insight-platform/deploy/docker/docker-compose.yml up -d data-collector)",
+      "Bash(docker exec short-video-data-collector sh -c \"sleep 5 && cat /var/log/supervisor/celery-worker.log | tail -30\")",
+      "Bash(docker logs short-video-data-collector --tail 40)",
+      "Bash(docker logs short-video-data-collector --tail 50)",
+      "Bash(docker exec short-video-postgres psql -U postgres -d short_video_insight -c \"SELECT task_id, name, last_run, next_run, interval_seconds FROM scheduled_tasks;\")",
+      "Bash(docker logs short-video-data-collector --tail 30)",
+      "Bash(docker logs short-video-data-collector)",
+      "Bash(docker exec short-video-data-collector cat /var/log/supervisor/celery-worker.log)",
+      "Bash(docker exec short-video-postgres psql -U postgres -d short_video_insight -c \"\\d scheduled_tasks\")"
     ],
     "deny": [],
     "ask": []

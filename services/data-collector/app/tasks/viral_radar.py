@@ -4,6 +4,7 @@ Viral Radar Tasks - 爆款雷达核心任务
 """
 import asyncio
 import time
+from asyncio import Semaphore
 
 from celery import shared_task
 from loguru import logger
@@ -47,6 +48,30 @@ def run_async(coro):
     loop = get_event_loop()
     return loop.run_until_complete(coro)
 
+
+def run_async_batch(coros, max_concurrent=2, delay_between=2):
+    """批量运行协程，控制并发和间隔"""
+
+    async def controlled_gather():
+        semaphore = Semaphore(max_concurrent)
+
+        async def controlled_coro(coro, index):
+            async with semaphore:
+                # 根据索引错开请求时间
+                if index > 0:
+                    await asyncio.sleep(delay_between * index)
+                return await coro
+
+        tasks = [
+            controlled_coro(coro, i)
+            for i, coro in enumerate(coros)
+        ]
+
+        return await asyncio.gather(*tasks, return_exceptions=True)
+
+    loop = get_event_loop()
+    results = loop.run_until_complete(controlled_gather())
+    return results
 
 @shared_task(bind=True, max_retries=2)
 def scan_and_detect_viral(self):
@@ -141,13 +166,17 @@ def scan_new_videos() -> List[Dict[str, Any]]:
     扫描各平台新发布的视频
     目前支持：B站分区视频（其他平台留空）
     """
-    new_videos = []
 
     # B站分区视频扫描
-    # 热门分区: 1-动画, 3-音乐, 4-游戏, 5-娱乐, 11-电视剧, 13-番剧, 23-电影
-    # 我们选择几个热门分区扫描
-    bilibili_rids = [1, 3, 4, 5, 23]  # 动画、音乐、游戏、娱乐、电影
-
+    from app.adapters.api.bilibili_api import get_videos_zones
+    new_videos = []
+    # B站分区视频扫描
+    bilibili_rids = []
+    zones = get_videos_zones()
+    bilibili_rids.extend(zones.keys())
+    for zone in zones.values():
+        bilibili_rids.extend(zone.values())
+    bilibili_rids = bilibili_rids[2:]   # 去除主站与VLOG
     try:
         # 初始化B站适配器（需要cookie）
         from app.core.config import settings
@@ -155,7 +184,13 @@ def scan_new_videos() -> List[Dict[str, Any]]:
 
         for rid in bilibili_rids:
             try:
-                videos = run_async(adapter.get_region_videos(rid=rid, pn=1, ps=20))
+                coros = [
+                    adapter.get_region_videos(rid=rid, pn=1, ps=20)
+                    for rid in bilibili_rids
+                ]
+
+                # 批量执行，最多2个并发，间隔2秒
+                videos = run_async_batch(coros, max_concurrent=5, delay_between=2)
 
                 # 数据清洗
                 for video in videos:

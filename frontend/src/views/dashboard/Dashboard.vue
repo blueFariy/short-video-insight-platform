@@ -154,9 +154,20 @@ const getAlertLevelText = (level: string) => {
 }
 
 // 点击洞察项
-const handleInsightClick = (item: any) => {
+const handleInsightClick = async (item: any) => {
   currentAlert.value = item
   alertDialogVisible.value = true
+
+  // 标记为已读（如果未读）
+  if (!item.is_read) {
+    try {
+      await collectorService.post(`${API_URL.COLLECTOR.ALERTS}/${item.id}/read`)
+      // 更新本地状态
+      item.is_read = true
+    } catch (error) {
+      console.error('标记已读失败:', error)
+    }
+  }
 }
 
 // 打开视频链接
