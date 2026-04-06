@@ -13,7 +13,16 @@
       "Bash(docker logs short-video-data-collector --tail 30)",
       "Bash(docker logs short-video-data-collector)",
       "Bash(docker exec short-video-data-collector cat /var/log/supervisor/celery-worker.log)",
-      "Bash(docker exec short-video-postgres psql -U postgres -d short_video_insight -c \"\\d scheduled_tasks\")"
+      "Bash(docker exec short-video-postgres psql -U postgres -d short_video_insight -c \"\\d scheduled_tasks\")",
+      "Bash(docker logs short-video-data-collector --tail 20)",
+      "Bash(cd D:/Program/PyCharm 2024.3.6/pythonProject/short-video-insight-platform/deploy/docker)",
+      "Bash(docker exec short-video-data-collector sh -c \"curl -s -X POST http://localhost:8004/api/v1/scheduler/tasks/scan_and_detect_viral/trigger\")",
+      "Bash(docker exec short-video-data-collector python -c \"\nfrom app.tasks.viral_radar import scan_and_detect_viral\nfrom celery import Celery\ncelery_app = Celery(''tasks'', broker=''amqp://guest:guest@rabbitmq:5672//'')\ncelery_app.send_task(''app.tasks.viral_radar.scan_and_detect_viral'')\nprint(''Task triggered'')\n\")",
+      "Bash(docker logs short-video-data-collector --tail 60)",
+      "Bash(docker-compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)"
     ],
     "deny": [],
     "ask": []

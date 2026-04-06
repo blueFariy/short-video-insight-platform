@@ -121,40 +121,25 @@ class DataCleaningPipeline:
         score = 1.0
         metrics = video.metrics
 
-        # 1. 检查点赞/播放比
-        if metrics.play_count > 0:
-            like_ratio = metrics.like_count / metrics.play_count
+        # 1. 检查播放量
+        if metrics.play_count < 100:
+            return 0
 
-            if like_ratio > 0.2:  # 异常高
-                logger.warning(f"Video {video.video_id}: Suspicious like ratio {like_ratio:.2%}")
-                score *= 0.5
-            elif like_ratio < 0.0001:  # 异常低但可能是新视频
-                score *= 0.9
+        # 1. 检查点赞/播放比
+        like_ratio = metrics.like_count / metrics.play_count
+        if like_ratio > 0.2:  # 异常高
+            logger.warning(f"Video {video.video_id}: Suspicious like ratio {like_ratio:.2%}")
+            score *= 0.5
+        elif like_ratio < 0.0001:  # 异常低但可能是新视频
+            score *= 0.9
 
         # 2. 检查评论/播放比
-        if metrics.play_count > 0:
-            comment_ratio = metrics.comment_count / metrics.play_count
+        comment_ratio = metrics.comment_count / metrics.play_count
 
-            if comment_ratio > 0.1:  # 评论率超过10%
-                # 需要进一步检查评论内容
-                # 这里简化处理
-                score *= 0.7
-
-        # 3. 检查分享/播放比（异常高可能有问题）
-        if metrics.play_count > 0:
-            share_ratio = metrics.share_count / metrics.play_count
-            if share_ratio > 0.5:  # 分享率超过50%太假
-                score *= 0.3
-
-        # 4. 标题质量
-        if video.title:
-            title_len = len(video.title)
-            if title_len < 3:  # 标题太短
-                score *= 0.8
-            elif title_len > 200:  # 标题太长
-                score *= 0.9
-        else:
-            score *= 0.5  # 无标题
+        if comment_ratio > 0.1:  # 评论率超过10%
+            # 需要进一步检查评论内容
+            # 这里简化处理
+            score *= 0.7
 
         # 5. 平台特异性检查
         if video.platform == 'bilibili':

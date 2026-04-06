@@ -30,6 +30,9 @@ class ViralVideoAnalyzer:
             self.optimal_update_interval[benchmark.category] = benchmark.creator_update_interval_hours
             self.decay_period[benchmark.category] = benchmark.decay_period
 
+        # 最终播放倍数
+        self.predicted_multiplier = 1.0
+
         # 互动权重
         self.alpha = 0.30  # 点赞权重
         self.beta = 0.50  # 收藏权重
@@ -61,12 +64,6 @@ class ViralVideoAnalyzer:
                 "late_mid": 1.5,  # 50-75%
                 "late": 1.1,  # >75%
             },
-            # 最大预测倍数限制
-            "max_prediction_factor": 15,
-            # 互动得分对增长率的贡献上限
-            "max_interaction_factor": 1.5,
-            # 最终预测时间点（半衰期的倍数）
-            "prediction_horizon": 2,
         }
 
     def init_params(self, video: Video, creator: Creator = None):
@@ -105,8 +102,8 @@ class ViralVideoAnalyzer:
         else:
             deviation = (duration - opt_max) / 60
 
-        # 偏离惩罚系数，最大惩罚不超过0.5
-        penalty = min(deviation * 0.1, 0.5)
+        # 偏离惩罚系数，最大惩罚不超过0.2
+        penalty = min(deviation * 0.1, 0.2)
         return 1.0 - penalty
 
     def calculate_time_decay(self, publish_time: datetime, current_time: datetime, decay_period: float) -> float:
@@ -171,11 +168,12 @@ class ViralVideoAnalyzer:
                                        interaction_score: float) -> float:
         """
         基于 Logistic 增长模型预测最终播放倍数
+        考虑：分母（作者平均播放量）也会随时间增长
         """
         # 1. 基础数据
         current_play = video.play_count
-        avg_play = creator.avg_play_count if creator.avg_play_count > 0 else 1
-        current_multiplier = current_play / avg_play
+        current_avg = creator.avg_play_count if creator.avg_play_count > 0 else 1
+        current_multiplier = current_play / current_avg
 
         hours_published = (current_time - video.publish_time).total_seconds() / 3600
 
@@ -192,54 +190,73 @@ class ViralVideoAnalyzer:
         life_ratio = min(hours_published / half_life_hours, 1.0)
 
         # 5. 计算增长率 r
-        r = self.platform_factor.get(video.platform, 1.0) * self.category_factor.get(video.category, 1.0) * (interaction_score / 20)
+        r = (self.platform_factor.get(video.platform, 1.0) *
+             self.category_factor.get(video.category, 1.0) *
+             (interaction_score / 20))
         r = min(max(r, 0.1), 1.5)
 
         # 6. 计算饱和倍数因子
         saturation_factor = self.calculate_saturation_factor(life_ratio, category_factor, current_multiplier)
 
-        # 7. 计算预测最终倍数
-        predicted_multiplier = current_multiplier * saturation_factor
+        # 7. 预测当前视频的最终播放量（分子）
+        predicted_play_final = current_play * saturation_factor
 
-        # 8. 使用 Logistic 曲线微调（如果已发布时间足够）
-        if hours_published > 0 and r > 0:
+        # ========== 关键修正：预测分母（作者平均播放量）的增长 ==========
+
+        # 8. 估算当前视频对作者平均播放量的提升系数
+        # 当前倍数越高，对平均播放量的提升越大
+        if current_multiplier > 20:
+            avg_boost_base = 1.5  # 爆发式增长，平均播放量提升50%
+        elif current_multiplier > 10:
+            avg_boost_base = 1.3  # 显著增长，提升30%
+        elif current_multiplier > 5:
+            avg_boost_base = 1.15  # 一定增长，提升15%
+        elif current_multiplier > 2:
+            avg_boost_base = 1.05  # 小幅增长，提升5%
+        else:
+            avg_boost_base = 1.0  # 无明显影响
+
+        # 互动率加成
+        if interaction_score > 15:
+            avg_boost_base *= 1.1
+        elif interaction_score > 8:
+            avg_boost_base *= 1.05
+
+        # 9. 计算半衰期结束时的作者平均播放量（分母）
+        # 假设：平均播放量从当前值线性增长到提升后的值
+        # 增长曲线也遵循 Logistic 模型
+        future_avg = current_avg * avg_boost_base
+
+        # 10. 重新计算预测倍数（基于未来的平均播放量）
+        predicted_multiplier = predicted_play_final / future_avg
+
+        # 11. 使用 Logistic 曲线微调
+        if hours_published > 0 and r > 0 and hours_published <= half_life_hours:
             try:
-                # 假设最终倍数为预测值，计算 Logistic 曲线上的预期值
-                K = predicted_multiplier * avg_play
-
-                # 解 Logistic 方程求拐点 t0
+                K = predicted_play_final
                 ratio = K / max(current_play, 1)
                 if ratio > 1:
                     ln_term = math.log(ratio - 1)
                     t0 = hours_published + ln_term / r
-
-                    # 预测最终时间点（2倍半衰期）的播放量
-                    final_time = half_life_hours * self.logistic_config["prediction_horizon"]
+                    final_time = half_life_hours  # 预测至半衰期
                     if final_time > 0:
                         exponent = -r * (final_time - t0)
-                        if exponent < 100:  # 防止溢出
+                        if exponent < 100:
                             predicted_play = K / (1 + math.exp(exponent))
-                            predicted_multiplier = predicted_play / avg_play
+                            predicted_multiplier = predicted_play / future_avg
             except (ValueError, OverflowError, ZeroDivisionError):
-                pass  # 使用原有的饱和倍数预测
-
-        # 9. 限制范围
-        max_factor = self.logistic_config["max_prediction_factor"]
-        predicted_multiplier = min(predicted_multiplier, current_multiplier * max_factor)
-        predicted_multiplier = max(predicted_multiplier, current_multiplier)
+                pass
 
         return predicted_multiplier
 
-    def calculate_play_bonus(self, predicted_multiplier: float) -> float:
+    def calculate_play_bonus(self) -> float:
         """
         计算播放倍数加成（对数压缩）
         """
-        if predicted_multiplier <= 0:
+        if self.predicted_multiplier <= 0:
             return 1.0
 
-        # 对数压缩
-        log_bonus = math.log(predicted_multiplier + 1)
-        return 1 + log_bonus
+        return math.pow(self.predicted_multiplier, 0.7)
 
     def calculate_viral_index(self, video: Video, creator: Creator, current_time: datetime) -> float:
         """计算爆款指数 H（使用 Logistic 预测模型）"""
@@ -248,12 +265,12 @@ class ViralVideoAnalyzer:
         interaction_score = self.calculate_interaction_score(video)
 
         # 预测最终播放倍数（基于 Logistic 模型）
-        predicted_multiplier = self.calculate_predicted_multiplier(
+        self.predicted_multiplier = self.calculate_predicted_multiplier(
             video, creator, current_time, interaction_score
         )
 
         # 播放倍数加成（对数压缩）
-        play_bonus = self.calculate_play_bonus(predicted_multiplier)
+        play_bonus = self.calculate_play_bonus()
 
         # 内容质量分 = 互动得分 × 播放加成
         content_quality = interaction_score * play_bonus
@@ -306,13 +323,15 @@ class ViralVideoAnalyzer:
         factors = []
 
         # 1. 播放量分析
-        play_ratio = video.play_count / creator.avg_play_count if creator.avg_play_count > 0 else 0
-        if play_ratio >= 20:
-            factors.append(f"🚀 播放量爆发 ({video.play_count / 10000:.0f}万) 是平均值的{play_ratio:.1f}倍")
-        elif play_ratio >= 10:
-            factors.append(f"📈 播放量优秀 ({video.play_count / 10000:.0f}万) 是平均值的{play_ratio:.1f}倍")
-        elif play_ratio >= 5:
-            factors.append(f"👍 播放量良好 ({video.play_count / 10000:.0f}万) 是平均值的{play_ratio:.1f}倍")
+        if self.predicted_multiplier >= 20:
+            factors.append(
+                f"🚀 （预计）播放量爆发 ({self.predicted_multiplier * creator.avg_play_count / 10000:.1f}万) 是平均值的{self.predicted_multiplier:.1f}倍")
+        elif self.predicted_multiplier >= 10:
+            factors.append(
+                f"📈 （预计）播放量优秀 ({self.predicted_multiplier * creator.avg_play_count / 10000:.1f}万) 是平均值的{self.predicted_multiplier:.1f}倍")
+        elif self.predicted_multiplier >= 5:
+            factors.append(
+                f"👍 （预计）播放量良好 ({self.predicted_multiplier * creator.avg_play_count / 10000:.1f}万) 是平均值的{self.predicted_multiplier:.1f}倍")
 
         # 2. 互动率分析
         if video.like_rate >= 10:
@@ -337,6 +356,11 @@ class ViralVideoAnalyzer:
             factors.append(f"🌟 小号逆袭 (粉丝{creator.follower_count / 10000:.1f}万)，播放量远超粉丝基数")
         elif creator.follower_count < 100000:
             factors.append(f"📊 腰部账号 (粉丝{creator.follower_count / 10000:.1f}万)，表现优异")
+        elif creator.follower_count < 1000000:
+            factors.append(f"🏆 头部达人 (粉丝{creator.follower_count / 10000:.1f}万)，粉丝基数大且内容穿透力强")
+        else:
+            factors.append(
+                f"👑 超级头部/顶流 (粉丝{creator.follower_count / 10000:.1f}万)，现象级影响力，自带流量引爆能力")
 
         # 4. 时间因素
         hours_ago = (current_time - video.publish_time).total_seconds() / 3600

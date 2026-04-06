@@ -54,18 +54,37 @@ def run_async(coro):
     return loop.run_until_complete(coro)
 
 
-def run_async_batch(coros, max_concurrent=2, delay_between=2):
-    """批量运行协程，控制并发和间隔"""
-    async def controlled_gather():
+def run_async_batch(coros, max_concurrent=2, delay_between=2.0, max_retries=2, retry_delay=3.0):
+    """
+    批量运行协程，控制并发、间隔和重试机制
+    """
+
+    async def controlled_coro_with_retry(coro, index):
         semaphore = Semaphore(max_concurrent)
 
-        async def controlled_coro(coro, index):
+        async def execute_with_retry():
             async with semaphore:
-                if index > 0:
-                    await asyncio.sleep(delay_between * index)
-                return await coro
+                # ✅ 每个任务执行前都添加固定延迟（错开请求时间）
+                await asyncio.sleep(delay_between)
+                # 带重试的执行
+                for attempt in range(max_retries + 1):
+                    try:
+                        return await coro
+                    except Exception as e:
+                        if attempt < max_retries:
+                            # ✅ 重试延迟使用递增策略
+                            wait_time = retry_delay * (attempt + 1)
+                            logger.warning(
+                                f"Task {index} failed (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying in {wait_time:.2f}s")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            logger.error(f"Task {index} failed after {max_retries + 1} attempts: {e}")
+                            raise e
 
-        tasks = [controlled_coro(coro, i) for i, coro in enumerate(coros)]
+        return await execute_with_retry()
+
+    async def controlled_gather():
+        tasks = [controlled_coro_with_retry(coro, i) for i, coro in enumerate(coros)]
         return await asyncio.gather(*tasks, return_exceptions=True)
 
     loop = get_event_loop()
@@ -228,46 +247,6 @@ def _process_video_batch(batch: List[Dict], interest_service, alert_service) -> 
     return results
 
 
-def _fetch_creator_with_retry(adapter, creator_id: str, max_retries: int = 2):
-    """
-    带重试机制的创作者信息获取
-    控制请求频率，避免触发反爬
-    """
-    for attempt in range(max_retries + 1):
-        try:
-            start_time = time.time()
-            logger.debug(f"Fetching creator {creator_id} (attempt {attempt + 1})")
-
-            # 获取创作者信息
-            creator_info = run_async(adapter.get_creator_info(creator_id))
-            if not creator_info:
-                raise Exception("")
-
-            elapsed = time.time() - start_time
-            logger.debug(f"Fetched creator {creator_id} in {elapsed:.2f}s")
-
-            # ✅ 成功后随机延迟，避免请求过快
-            if elapsed < 3:
-                wait_time = random.uniform(3, 5)
-                logger.debug(f"Waiting {wait_time:.2f}s before next request")
-                time.sleep(wait_time)
-
-            return creator_info
-
-        except Exception as e:
-            logger.warning(f"Failed to fetch creator {creator_id} (attempt {attempt + 1}): {e}")
-
-            if attempt < max_retries:
-                wait_time = random.uniform(3, 5)  # 重试前也随机等待
-                logger.debug(f"Waiting {wait_time:.2f}s before retry")
-                time.sleep(wait_time)
-            else:
-                logger.error(f"Failed to fetch creator {creator_id} after {max_retries + 1} attempts")
-                return None
-
-    return None
-
-
 def scan_new_videos_generator() -> Generator[Dict[str, Any], None, None]:
     """
     分批扫描各平台新发布的视频，并获取创作者信息
@@ -283,7 +262,9 @@ def scan_new_videos_generator() -> Generator[Dict[str, Any], None, None]:
 
     zones = get_videos_zones()
     bilibili_rids = []
-    for zone in zones.values():
+    for main_tid, zone in zones.items():
+        if main_tid in [5, 211, 217, 223, 234]:  # 过滤：娱乐5、美食211、动物圈217、汽车223、运动234
+            continue
         bilibili_rids.extend(zone.values())
     bilibili_rids = bilibili_rids[:]
 
@@ -304,24 +285,31 @@ def scan_new_videos_generator() -> Generator[Dict[str, Any], None, None]:
             logger.info(f"Scanning B站分区 {rid} ({idx + 1}/{len(bilibili_rids)})")
 
             try:
-                # ✅ 爬取单个分区
+                # ✅ 爬取单个分区（使用带重试的批量执行）
                 coros = [adapter.get_region_videos(rid=rid, pn=1, ps=20)]
-                videos = run_async_batch(coros, max_concurrent=3, delay_between=1)
+                videos = run_async_batch(
+                    coros,
+                    max_concurrent=3,
+                    delay_between=1,
+                    max_retries=2,  # 重试2次
+                    retry_delay=2  # 重试延迟2秒
+                )
 
                 zone_video_count = 0
+                videos_to_process = []
 
                 # ✅ 处理该分区的每个视频
                 for result in videos:
-                    # 处理异常
+                    # 处理异常（已经过重试，如果还失败就记录）
                     if isinstance(result, Exception):
-                        logger.warning(f"Zone {rid} API error: {result}")
+                        logger.warning(f"Zone {rid} API error after retries: {result}")
                         continue
 
                     if not isinstance(result, list):
                         logger.warning(f"Zone {rid} returned unexpected type: {type(result)}")
                         continue
 
-                    # ✅ 逐个视频处理并获取创作者信息
+                    # 收集视频
                     for video in result:
                         if not hasattr(video, 'video_id'):
                             continue
@@ -330,24 +318,50 @@ def scan_new_videos_generator() -> Generator[Dict[str, Any], None, None]:
                         if not cleaned:
                             continue
 
-                        # ✅ 检查视频是否已存在
                         if check_video_exists(cleaned.video_id):
                             logger.debug(f"Video {cleaned.video_id} already exists, skipping")
                             continue
 
-                        # ✅ 保存视频到数据库
                         save_video_to_db(cleaned)
                         zone_video_count += 1
+                        videos_to_process.append(cleaned)
 
-                        # ✅ 获取创作者信息（带重试和延迟）
-                        creator_info = None
-                        if cleaned.creator_id:
-                            creator_info = _fetch_creator_with_retry(adapter, cleaned.creator_id)
+                # ✅ 并行获取所有创作者信息（使用相同的重试机制）
+                if videos_to_process:
+                    # 收集去重的创作者ID
+                    creator_ids = list(set([
+                        video.creator_id for video in videos_to_process
+                        if video.creator_id
+                    ]))
 
-                        # ✅ 立即 yield 视频和创作者信息
+                    # 创建获取创作者信息的协程列表
+                    creator_coros = [
+                        adapter.get_creator_info(creator_id)
+                        for creator_id in creator_ids
+                    ]
+
+                    # 批量并行获取（自动带重试和限流）
+                    creator_results = run_async_batch(
+                        creator_coros,
+                        max_concurrent=2,  # 创作者请求并发数
+                        delay_between=random.uniform(3, 5),  # 请求间隔3~5s
+                        max_retries=3,  # 重试3次
+                        retry_delay=random.uniform(3, 5)  # 重试延迟3~5s
+                    )
+
+                    # 创建创作者ID到信息的映射
+                    creator_map = {}
+                    for creator_id, result in zip(creator_ids, creator_results):
+                        if not isinstance(result, Exception) and result:
+                            creator_map[creator_id] = result
+                        else:
+                            logger.warning(f"Failed to fetch creator {creator_id}: {result}")
+
+                    # ✅ 逐个 yield 视频和对应的创作者信息
+                    for video in videos_to_process:
                         yield {
-                            "video": cleaned,
-                            "creator": creator_info,
+                            "video": video,
+                            "creator": creator_map.get(video.creator_id),
                             "platform": "bilibili",
                             "zone": rid
                         }
@@ -358,7 +372,6 @@ def scan_new_videos_generator() -> Generator[Dict[str, Any], None, None]:
 
             except Exception as e:
                 logger.warning(f"Failed to scan B站分区 {rid}: {e}")
-                # 出错时记录错误但不中断
                 yield {
                     "error": str(e),
                     "zone": rid,
@@ -453,6 +466,7 @@ def save_video_to_db(video: Video):
                         like_count=video.metrics.like_count if video.metrics else 0,
                         comment_count=video.metrics.comment_count if video.metrics else 0,
                         share_count=video.metrics.share_count if video.metrics else 0,
+                        collect_count=video.metrics.collect_count if video.metrics else 0,
                         creator_id=video.creator_id or "",
                         creator_name=video.creator_name or "",
                         category=getattr(video, 'category', '') or ""

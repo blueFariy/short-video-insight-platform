@@ -89,7 +89,7 @@ async def get_video_detail():
 
     # 使用一个已知的B站视频BV号测试
     # BV1Eg411v7a1 是文档中的示例视频
-    video = await adapter.get_video_detail('BV1cwpnekEmG')
+    video = await adapter.get_video_detail('BV13awjzWEMA')
 
     if video:
         print(f"\nTitle: {video.title}")
@@ -213,7 +213,6 @@ async def scan_bilibili_hot_with_creator():
     print("\n--- Sample Data ---")
     for video in hot_videos:
         creator = await get_creator_info_id(video.creator_id)
-        result = await viral_detector.detect(video, creator)
         time.sleep(3)
         print(f"\nTitle: {video.title}")
         print(f"BVID: {video.video_id}")
@@ -293,7 +292,7 @@ async def main():
         results['creator'] = False
     creator = results['creator']
 
-    result = await scan_bilibili_regions()
+    # result = await scan_bilibili_regions()
     # # 6. 测试创作者视频列表
     # try:
     #     results['creator_videos'] = await get_creator_videos()
@@ -307,6 +306,7 @@ async def main():
     # except Exception as e:
     #     print(f"ERROR in comments: {e}")
     #     results['comments'] = False
+    result = await viral_detector.detect(video, creator)
     print("````````````````````````````````````")
     print(result)
 
