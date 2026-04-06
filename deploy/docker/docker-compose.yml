@@ -11,6 +11,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: short-video-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -31,6 +32,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: short-video-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -47,6 +49,7 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: short-video-elasticsearch
+    restart: unless-stopped
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
@@ -68,6 +71,7 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: short-video-rabbitmq
+    restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
@@ -90,6 +94,7 @@ services:
       context: ../../services/user-service
       dockerfile: Dockerfile
     container_name: short-video-user-service
+    restart: unless-stopped
     expose:
       - "8001"
     environment:
@@ -125,6 +130,7 @@ services:
       context: ../../services/video-service
       dockerfile: Dockerfile
     container_name: short-video-video-service
+    restart: unless-stopped
     expose:
       - "8002"
     environment:
@@ -167,6 +173,7 @@ services:
       context: ../../services/insight-generator
       dockerfile: Dockerfile
     container_name: short-video-insight-service
+    restart: unless-stopped
     expose:
       - "8003"
     volumes:
@@ -198,6 +205,7 @@ services:
       context: ../../services/data-collector
       dockerfile: Dockerfile
     container_name: short-video-data-collector
+    restart: unless-stopped
     expose:
       - "8004"
     environment:
@@ -242,6 +250,7 @@ services:
       context: ../../services/competitor-monitor
       dockerfile: Dockerfile
     container_name: short-video-competitor-monitor
+    restart: unless-stopped
     expose:
       - "8005"
     environment:
@@ -274,6 +283,7 @@ services:
       context: ../../services/report-service
       dockerfile: Dockerfile
     container_name: short-video-report-service
+    restart: unless-stopped
     expose:
       - "8006"
     environment:
@@ -304,6 +314,7 @@ services:
       context: ../../frontend
       dockerfile: Dockerfile
     container_name: short-video-frontend
+    restart: unless-stopped
     expose:
       - "80"
     develop:
@@ -340,6 +351,7 @@ services:
   nginx:
     image: nginx:alpine
     container_name: short-video-nginx
+    restart: unless-stopped
     ports:
       - "80:80"      # HTTP 统一入口
       - "443:443"    # HTTPS 预留
@@ -360,7 +372,6 @@ services:
       - frontend
     networks:
       - default
-    restart: unless-stopped
 
 volumes:
   postgres_data:

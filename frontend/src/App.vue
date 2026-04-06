@@ -20,7 +20,8 @@ const menuItems = [
   { path: '/collector', icon: 'Upload', label: '数据采集' },
   { path: '/collector/manual', icon: 'Plus', label: '手动采集' },
   { path: '/monitor', icon: 'Monitor', label: '竞品监控' },
-  { path: '/reports', icon: 'TrendCharts', label: '趋势报告' }
+  { path: '/reports', icon: 'TrendCharts', label: '趋势报告' },
+  { path: '/reports/trend', icon: 'DataLine', label: '趋势洞察' }
 ]
 
 const handleCommand = (command: string) => {

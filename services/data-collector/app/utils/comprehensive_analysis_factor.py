@@ -31,9 +31,9 @@ class ViralVideoAnalyzer:
             self.decay_period[benchmark.category] = benchmark.decay_period
 
         # 互动权重
-        self.alpha = 0.35  # 点赞权重
-        self.beta = 0.25  # 收藏权重
-        self.gamma = 0.40  # 评论权重
+        self.alpha = 0.30  # 点赞权重
+        self.beta = 0.50  # 收藏权重
+        self.gamma = 0.20  # 评论权重
 
         # 时间衰减系数（小时^-1），不同平台更新频率
         self.lambda_decay = 0.02
@@ -50,6 +50,24 @@ class ViralVideoAnalyzer:
 
         # 基准平均播放量
         self.base_avg_play = 100000
+
+        # Logistic 预测模型配置
+        self.logistic_config = {
+            # 饱和度倍数（根据已发布比例）
+            "saturation_factors": {
+                "early": 20,  # <10%生命周期
+                "early_mid": 7,  # 10-25%
+                "mid": 3,  # 25-50%
+                "late_mid": 1.5,  # 50-75%
+                "late": 1.1,  # >75%
+            },
+            # 最大预测倍数限制
+            "max_prediction_factor": 15,
+            # 互动得分对增长率的贡献上限
+            "max_interaction_factor": 1.5,
+            # 最终预测时间点（半衰期的倍数）
+            "prediction_horizon": 2,
+        }
 
     def init_params(self, video: Video, creator: Creator = None):
         match video.platform:
@@ -69,7 +87,6 @@ class ViralVideoAnalyzer:
         optimal_interval = self.optimal_update_interval.get(category, 48)
         ratio = actual_interval / optimal_interval
         return 1 / (1 + (ratio - 1) * 0.2)  # 最大惩罚20%
-        # return ratio
 
     def calculate_duration_factor(self, category: str, duration: int) -> float:
         """计算时长修正系数"""
@@ -116,10 +133,130 @@ class ViralVideoAnalyzer:
                 self.beta * video.favorite_rate +
                 self.gamma * video.comment_rate)
 
+    def calculate_saturation_factor(self, life_ratio: float, category_factor: float,
+                                    current_multiplier: float) -> float:
+        """
+        计算饱和倍数因子
+
+        根据已发布比例估算最终倍数
+        """
+        config = self.logistic_config["saturation_factors"]
+
+        if life_ratio < 0.1:
+            saturation_factor = config["early"]
+        elif life_ratio < 0.25:
+            saturation_factor = config["early_mid"]
+        elif life_ratio < 0.5:
+            saturation_factor = config["mid"]
+        elif life_ratio < 0.75:
+            saturation_factor = config["late_mid"]
+        else:
+            saturation_factor = config["late"]
+
+        # 分类系数调整：传播能力强的分类，饱和倍数更高
+        saturation_factor = saturation_factor * (0.8 + category_factor * 0.5)
+
+        # 当前播放倍数越高，饱和倍数可以适当降低（已经爆发）
+        if current_multiplier > 10:
+            saturation_factor = min(saturation_factor, 2.0)
+        elif current_multiplier > 5:
+            saturation_factor = min(saturation_factor, 3.0)
+
+        return saturation_factor
+
+    def calculate_predicted_multiplier(self,
+                                       video: Video,
+                                       creator: Creator,
+                                       current_time: datetime,
+                                       interaction_score: float) -> float:
+        """
+        基于 Logistic 增长模型预测最终播放倍数
+        """
+        # 1. 基础数据
+        current_play = video.play_count
+        avg_play = creator.avg_play_count if creator.avg_play_count > 0 else 1
+        current_multiplier = current_play / avg_play
+
+        hours_published = (current_time - video.publish_time).total_seconds() / 3600
+
+        # 2. 获取分类参数
+        half_life_days = self.decay_period.get(video.category, 60)
+        half_life_hours = half_life_days * 24
+        category_factor = self.category_factor.get(video.category, 1.0)
+
+        # 3. 如果已超过生命周期，直接返回当前倍数
+        if hours_published >= half_life_hours * 1.5:
+            return current_multiplier
+
+        # 4. 计算生命周期比例
+        life_ratio = min(hours_published / half_life_hours, 1.0)
+
+        # 5. 计算增长率 r
+        r = self.platform_factor.get(video.platform, 1.0) * self.category_factor.get(video.category, 1.0) * (interaction_score / 20)
+        r = min(max(r, 0.1), 1.5)
+
+        # 6. 计算饱和倍数因子
+        saturation_factor = self.calculate_saturation_factor(life_ratio, category_factor, current_multiplier)
+
+        # 7. 计算预测最终倍数
+        predicted_multiplier = current_multiplier * saturation_factor
+
+        # 8. 使用 Logistic 曲线微调（如果已发布时间足够）
+        if hours_published > 0 and r > 0:
+            try:
+                # 假设最终倍数为预测值，计算 Logistic 曲线上的预期值
+                K = predicted_multiplier * avg_play
+
+                # 解 Logistic 方程求拐点 t0
+                ratio = K / max(current_play, 1)
+                if ratio > 1:
+                    ln_term = math.log(ratio - 1)
+                    t0 = hours_published + ln_term / r
+
+                    # 预测最终时间点（2倍半衰期）的播放量
+                    final_time = half_life_hours * self.logistic_config["prediction_horizon"]
+                    if final_time > 0:
+                        exponent = -r * (final_time - t0)
+                        if exponent < 100:  # 防止溢出
+                            predicted_play = K / (1 + math.exp(exponent))
+                            predicted_multiplier = predicted_play / avg_play
+            except (ValueError, OverflowError, ZeroDivisionError):
+                pass  # 使用原有的饱和倍数预测
+
+        # 9. 限制范围
+        max_factor = self.logistic_config["max_prediction_factor"]
+        predicted_multiplier = min(predicted_multiplier, current_multiplier * max_factor)
+        predicted_multiplier = max(predicted_multiplier, current_multiplier)
+
+        return predicted_multiplier
+
+    def calculate_play_bonus(self, predicted_multiplier: float) -> float:
+        """
+        计算播放倍数加成（对数压缩）
+        """
+        if predicted_multiplier <= 0:
+            return 1.0
+
+        # 对数压缩
+        log_bonus = math.log(predicted_multiplier + 1)
+        return 1 + log_bonus
+
     def calculate_viral_index(self, video: Video, creator: Creator, current_time: datetime) -> float:
-        """计算爆款指数 H"""
-        # 播放量倍数
-        play_multiplier = video.play_count / creator.avg_play_count if creator.avg_play_count > 0 else 0
+        """计算爆款指数 H（使用 Logistic 预测模型）"""
+
+        # 互动得分
+        interaction_score = self.calculate_interaction_score(video)
+
+        # 预测最终播放倍数（基于 Logistic 模型）
+        predicted_multiplier = self.calculate_predicted_multiplier(
+            video, creator, current_time, interaction_score
+        )
+
+        # 播放倍数加成（对数压缩）
+        play_bonus = self.calculate_play_bonus(predicted_multiplier)
+
+        # 内容质量分 = 互动得分 × 播放加成
+        content_quality = interaction_score * play_bonus
 
         # 平台与分类系数
         platform_f = self.platform_factor.get(video.platform, 1.0)
@@ -128,11 +265,11 @@ class ViralVideoAnalyzer:
         # 粉丝数调整系数
         follower_factor = self.calculate_follower_factor(creator.follower_count)
 
-        # 互动得分
-        interaction_score = self.calculate_interaction_score(video)
-
         # 时间衰减
-        time_decay = self.calculate_time_decay(video.publish_time, current_time, self.decay_period[video.category])
+        time_decay = self.calculate_time_decay(
+            video.publish_time, current_time,
+            self.decay_period.get(video.category, 60)
+        )
 
         # 时长修正
         duration_factor = self.calculate_duration_factor(video.category, video.duration)
@@ -143,10 +280,9 @@ class ViralVideoAnalyzer:
         )
 
         # 综合计算
-        H = (play_multiplier *
+        H = (content_quality *
              (platform_f / category_f) *
              follower_factor *
-             interaction_score *
              time_decay *
              duration_factor *
              (1 / update_interval_factor))

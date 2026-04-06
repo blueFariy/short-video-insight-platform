@@ -231,8 +231,20 @@ VIDEO_ZONES = {
     },
 }
 
+
 def get_videos_zones() -> Dict:
     return VIDEO_ZONES
+
+# 视频主分区
+VIDEO_MAIN_ZONES_REVERSE = {v: k for k, v in VIDEO_MAIN_ZONES.items()}
+
+def get_main_zones_by_category(category: str) -> str:
+    for main_tid, sub_zones in VIDEO_ZONES.items():
+        for sub_name,sub_tid in sub_zones.items():
+            if sub_name == category:
+                return VIDEO_MAIN_ZONES_REVERSE.get(main_tid)
+    return category
+
 
 class BilibiliAPI:
     """B站API端点"""
@@ -276,17 +288,15 @@ class BilibiliAPI:
             主分区名称，如"动画"、"音乐"等，未找到返回"unknown"
         """
         if tid == 0:
-            return "unknown"
+            return "全站"
 
         # 反向查找：从子分区找到主分区
         for main_id, sub_zones in VIDEO_ZONES.items():
             if main_id <= 0:
                 continue
-            if tid in sub_zones.values():
-                # 找到主分区ID，反向查找主分区名称
-                for name, main_id_check in VIDEO_MAIN_ZONES.items():
-                    if main_id_check == main_id:
-                        return name
+            for name, sub_tid in sub_zones.items():
+                if tid == sub_tid:
+                    return name
 
         return "unknown"
 

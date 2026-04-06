@@ -9,9 +9,9 @@ const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || '/user_servi
 const VIDEO_BASE_URL = (import.meta as any).env?.VITE_VIDEO_BASE_URL || '/video_service/api/v1'
 const INSIGHT_BASE_URL = (import.meta as any).env?.VITE_INSIGHT_BASE_URL || '/insight_service/api/v1'
 const COLLECTOR_BASE_URL = (import.meta as any).env?.VITE_COLLECTOR_BASE_URL || '/data_collector/api/v1'
+const REPORT_BASE_URL = (import.meta as any).env?.VITE_REPORT_BASE_URL || '/report_service/api/v1'
 // 未使用的URL配置，保留供将来使用
 // const MONITOR_BASE_URL = (import.meta as any).env?.VITE_MONITOR_BASE_URL || 'http://localhost:8005'
-// const REPORT_BASE_URL = (import.meta as any).env?.VITE_REPORT_BASE_URL || 'http://localhost:8006'
 
 // Create axios instance
 const service: AxiosInstance = axios.create({
@@ -66,6 +66,50 @@ const collectorService: AxiosInstance = axios.create({
     timeout: 60000,
     headers: {'Content-Type': 'application/json'}
 })
+
+// Report service (port 8006)
+const reportService: AxiosInstance = axios.create({
+    baseURL: REPORT_BASE_URL,
+    timeout: 60000,
+    headers: {'Content-Type': 'application/json'}
+})
+
+// Report service request interceptor
+reportService.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('token')
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`
+        }
+        return config
+    },
+    (error) => Promise.reject(error)
+)
+
+// Report service response interceptor
+reportService.interceptors.response.use(
+    (response: AxiosResponse) => {
+        const res = response.data
+        if (res.code !== undefined) {
+            if (res.code === 200) {
+                return res.data !== undefined ? res.data : res
+            } else {
+                ElMessage.error(res.message || 'Request failed')
+                return Promise.reject(new Error(res.message || 'Request failed'))
+            }
+        }
+        return response.data
+    },
+    (error) => {
+        console.error('Report service error:', error)
+        if (error.response?.status === 401) {
+            ElMessage.error('登录已过期，请重新登录')
+            localStorage.removeItem('token')
+            window.location.href = '/login'
+        }
+        return Promise.reject(error)
+    }
+)
 
 // Collector request interceptor
 collectorService.interceptors.request.use(
@@ -163,7 +207,7 @@ service.interceptors.response.use(
     }
 )
 
-export {videoService, insightService, collectorService}
+export {videoService, insightService, collectorService, reportService}
 export default service
 
 // API service URLs
@@ -238,7 +282,8 @@ export const API_URL = {
         // 用户兴趣配置
         USER_INTEREST_GET: `/viral/user/interest`,
         USER_INTEREST_UPDATE: `/viral/user/interest`,
-        ALERTS: `/viral/alerts`
+        ALERTS: `/viral/alerts`,
+        CATEGORIES: `/viral/categories`
     },
 
     // Competitor Monitor (port 8005)
@@ -267,6 +312,12 @@ export const API_URL = {
         GENERATE_COMPETITOR: '/reports/reports/generate/competitor',
         GENERATE_TREND: '/reports/reports/generate/trend',
         EXPORT: (id: string) => `/reports/reports/${id}/export`,
-        EXPORT_FORMATS: '/reports/export/formats'
+        EXPORT_FORMATS: '/reports/export/formats',
+        // 趋势报告 API
+        TREND_STATISTICS: '/reports/trend/statistics',
+        TREND_VIRAL: '/reports/trend/viral',
+        TREND_GENERATE: '/reports/trend/generate',
+        TREND_LIST: '/reports/trend/list',
+        TREND_DETAIL: (id: number) => `/reports/trend/${id}`
     }
 }

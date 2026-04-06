@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS viral_alerts (
     user_id BIGINT NOT NULL,
     video_id VARCHAR(100) NOT NULL,
     platform VARCHAR(20),
+    category VARCHAR(20),
     title VARCHAR(500),
     cover_url TEXT,
     video_url TEXT,

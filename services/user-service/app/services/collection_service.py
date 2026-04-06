@@ -230,6 +230,7 @@ class CollectionService:
         from sqlalchemy import text
         for collection in collections:
             if collection.item_id:
+
                 # 查询视频信息 - 使用videos表
                 video_result = await db.execute(
                     text("""

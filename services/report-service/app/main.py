@@ -19,6 +19,7 @@ from app.core.handlers import (
     validation_exception_handler,
     general_exception_handler
 )
+from app.core.database import db_manager
 from app.api.v1.router import api_router
 
 
@@ -38,8 +39,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"Report directory: {settings.REPORT_DIR}")
     logger.info(f"Export formats: {settings.EXPORT_FORMATS}")
 
+    # Initialize database connection
+    db_manager.init_db()
+    logger.info("Database connection initialized")
+
     yield
 
+    # Close database connection
+    await db_manager.close()
     logger.info(f"{settings.SERVICE_NAME} shutting down...")
 
 

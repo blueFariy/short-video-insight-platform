@@ -9,6 +9,7 @@ from loguru import logger
 from app.services.user_interest_service import get_alert_record_service, get_user_interest_service
 from app.services.metric_snapshot_service import get_metric_snapshot_service
 from app.core.security import decode_access_token
+from app.adapters.api.bilibili_api import VIDEO_ZONES, VIDEO_MAIN_ZONES
 
 
 router = APIRouter(tags=["爆款雷达"])
@@ -51,6 +52,7 @@ async def get_alerts(
     is_read: Optional[bool] = Query(None, description="已读状态筛选"),
     platform: Optional[str] = Query(None, description="平台筛选"),
     keyword: Optional[str] = Query(None, description="关键词搜索(标题)"),
+    categories: Optional[str] = Query(None, description="分类筛选列表(逗号分隔)"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     current_user = Depends(get_current_user_id)
@@ -58,6 +60,11 @@ async def get_alerts(
     """
     获取当前用户的预警列表
     """
+    # 处理逗号分隔的分类字符串
+    categories_list = None
+    if categories:
+        categories_list = [c.strip() for c in categories.split(',') if c.strip()]
+
     service = get_alert_record_service()
     result = await service.get_user_alerts(
         user_id=current_user,
@@ -65,6 +72,7 @@ async def get_alerts(
         is_read=is_read,
         platform=platform,
         keyword=keyword,
+        categories=categories_list,
         page=page,
         page_size=page_size
     )
@@ -233,4 +241,34 @@ async def update_user_interest(
             "alert_levels": interest.alert_levels,
             "notification_channels": interest.notification_channels
         }
+    }
+
+
+@router.get("/categories", summary="获取分类树")
+async def get_categories():
+    """
+    获取分类树结构（主分类+子分类）
+    """
+    # 构建分类树
+    category_tree = []
+    for main_name, main_id in VIDEO_MAIN_ZONES.items():
+        if main_id <= 0:  # 跳过全站和VLOG
+            continue
+        sub_categories = []
+        if main_id in VIDEO_ZONES:
+            for sub_name, sub_id in VIDEO_ZONES[main_id].items():
+                sub_categories.append({
+                    "label": sub_name,
+                    "value": sub_name
+                })
+        category_tree.append({
+            "label": main_name,
+            "value": main_name,
+            "children": sub_categories
+        })
+
+    return {
+        "code": 200,
+        "message": "success",
+        "data": category_tree
     }

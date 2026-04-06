@@ -253,7 +253,7 @@ class BilibiliAdapter(PlatformAdapter):
         # 获取视频tid（分区ID）
         tid = data.get("tid", 0)
 
-        # 根据tid获取主分区名称
+        # 根据tid获取分区名称
         category = BilibiliAPI.get_main_category_name(tid)
 
         # 创建metrics

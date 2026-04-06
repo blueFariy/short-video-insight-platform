@@ -78,6 +78,7 @@ class ViralAlert(Base):
     # 视频信息
     video_id = Column(String(100), nullable=False, index=True)
     platform = Column(String(20))
+    category = Column(String(50))  # 视频分类
     title = Column(String(500))
     cover_url = Column(Text)
     video_url = Column(Text)

@@ -18,9 +18,39 @@ const totalCount = ref(0)
 // 筛选条件
 const filterIsRead = ref<boolean | ''>('')
 const filterAlertLevel = ref('')
+const filterCategories = ref<string[]>([])  // 存储查询用的叶子节点值数组
+const filterCategoriesPath = ref<string[][]>([])  // 存储级联选择器的嵌套路径
 const filterPlatform = ref('')
 const filterKeyword = ref('')
 const sortOrder = ref<'desc' | 'asc'>('desc')
+
+// 分类选项（级联选择器）- 从后端获取
+const categoryOptions = ref<any[]>([])
+
+// 获取分类树
+const fetchCategories = async () => {
+  try {
+    // collectorService response interceptor already returns res.data, so res is the data directly
+    const data = await collectorService.get(API_URL.COLLECTOR.CATEGORIES) as any
+    if (data && Array.isArray(data)) {
+      categoryOptions.value = data
+    }
+  } catch (error) {
+    console.error('获取分类树失败:', error)
+    // 备用本地数据
+    categoryOptions.value = [
+      { label: '动画', value: '动画', children: [
+        { label: 'MAD·AMV', value: 'MAD·AMV' },
+        { label: 'MMD·3D', value: 'MMD·3D' },
+        { label: '同人·手书', value: '同人·手书' }
+      ]},
+      { label: '音乐', value: '音乐', children: [
+        { label: '原创音乐', value: '原创音乐' },
+        { label: '音乐现场', value: '音乐现场' }
+      ]}
+    ]
+  }
+}
 
 // 弹窗相关
 const alertDialogVisible = ref(false)
@@ -35,6 +65,10 @@ const fetchTodayInsights = async () => {
     }
     if (filterAlertLevel.value) {
       params.alert_level = filterAlertLevel.value
+    }
+    if (filterCategories.value.length > 0) {
+      // 直接使用展开后的叶子节点值数组
+      params.categories = filterCategories.value.join(',')
     }
     if (filterPlatform.value) {
       params.platform = filterPlatform.value
@@ -58,6 +92,7 @@ const fetchTodayInsights = async () => {
       type: alert.alert_level,
       alert_level: alert.alert_level,
       platform: alert.platform,
+      category: alert.category,
       title: alert.title,
       url: alert.video_url,
       factors: alert.factors || [],
@@ -68,6 +103,97 @@ const fetchTodayInsights = async () => {
   } catch (error) {
     console.error('获取今日洞察失败:', error)
   }
+}
+
+// 分类筛选变化
+const handleCategoryChange = (paths: string[][]) => {
+  // 获取当前所有主分类
+  const mainCategories = categoryOptions.value.map((opt: any) => opt.value)
+
+  // 计算每个主分类下已选中的子分类数量
+  const mainCategoryStatus = new Map<string, { total: number; selected: number }>()
+
+  // 初始化主分类状态
+  for (const mainCategory of mainCategories) {
+    const mainOption = categoryOptions.value.find((opt: any) => opt.value === mainCategory)
+    const totalChildren = mainOption?.children?.length || 0
+    mainCategoryStatus.set(mainCategory, { total: totalChildren, selected: 0 })
+  }
+
+  // 统计已选中的子分类
+  for (const path of paths) {
+    if (path.length === 2) {
+      const mainCategory = path[0]
+      const status = mainCategoryStatus.get(mainCategory)
+      if (status) {
+        status.selected++
+      }
+    }
+  }
+
+  // 处理联动逻辑
+  let newPaths = [...paths]
+
+  // 检查每个主分类的选中状态，决定是否自动添加/移除主分类
+  for (const [mainCategory, status] of mainCategoryStatus.entries()) {
+    const isMainSelected = paths.some(path => path.length === 1 && path[0] === mainCategory)
+
+    if (status.total > 0) {
+      if (status.selected === status.total && !isMainSelected) {
+        // 所有子分类都被选中了，但主分类未选中 -> 自动添加主分类
+        newPaths.push([mainCategory])
+      } else if (status.selected < status.total && isMainSelected) {
+        // 不是所有子分类都被选中，但主分类被选中了 -> 自动移除主分类
+        const mainIndex = newPaths.findIndex(path => path.length === 1 && path[0] === mainCategory)
+        if (mainIndex !== -1) {
+          newPaths.splice(mainIndex, 1)
+        }
+      }
+    }
+  }
+
+  // 去重处理
+  const uniquePaths = newPaths.filter((path, index, self) =>
+    index === self.findIndex(p =>
+      p.length === path.length &&
+      p.every((val, i) => val === path[i])
+    )
+  )
+
+  // 更新显示值
+  filterCategoriesPath.value = uniquePaths
+
+  // 展开所有选中的分类用于查询
+  const expandedCategories: string[] = []
+
+  for (const path of uniquePaths) {
+    if (path.length === 1) {
+      // 主分类 - 展开为所有子分类
+      const mainCategory = path[0]
+      const mainOption = categoryOptions.value.find((opt: any) => opt.value === mainCategory)
+      if (mainOption && mainOption.children && mainOption.children.length > 0) {
+        for (const child of mainOption.children) {
+          if (!expandedCategories.includes(child.value)) {
+            expandedCategories.push(child.value)
+          }
+        }
+      } else {
+        if (!expandedCategories.includes(mainCategory)) {
+          expandedCategories.push(mainCategory)
+        }
+      }
+    } else {
+      // 子分类 - 直接添加
+      const leafValue = path[path.length - 1]
+      if (!expandedCategories.includes(leafValue)) {
+        expandedCategories.push(leafValue)
+      }
+    }
+  }
+
+  filterCategories.value = expandedCategories
+  currentPage.value = 1
+  fetchTodayInsights()
 }
 
 // 筛选变化
@@ -84,7 +210,7 @@ const handlePageChange = (page: number) => {
 
 // 连接 WebSocket
 const connectWebSocket = () => {
-  const wsUrl = `ws://data_collector/ws/viral-alerts`
+  const wsUrl = `ws://data_collector/api/v1/ws/viral-alerts`
   ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {
@@ -256,6 +382,7 @@ const formatNumber = (num: number) => {
 }
 
 onMounted(() => {
+  fetchCategories()
   fetchTodayInsights()
   fetchViralVideos()
   connectWebSocket()
@@ -302,6 +429,15 @@ onUnmounted(() => {
               <el-option label="B站" value="bilibili" />
               <el-option label="小红书" value="xiaohongshu" />
             </el-select>
+            <el-cascader
+              v-model="filterCategoriesPath"
+              :options="categoryOptions"
+              :props="{ multiple: true, checkStrictly: false, emitPath: true }"
+              placeholder="分类筛选"
+              clearable
+              @change="handleCategoryChange"
+              style="width: 220px"
+            />
             <el-input v-model="filterKeyword" placeholder="关键词搜索" clearable @change="handleFilterChange" style="width: 150px" />
             <el-radio-group v-model="sortOrder" @change="handleFilterChange">
               <el-radio-button value="desc">最新优先</el-radio-button>
@@ -316,6 +452,9 @@ onUnmounted(() => {
               </el-tag>
               <el-tag :type="getPlatformTag(item.platform).type" size="small">
                 {{ getPlatformTag(item.platform).label }}
+              </el-tag>
+              <el-tag v-if="item.category" type="info" size="small">
+                {{ item.category }}
               </el-tag>
               <span class="alert-title">{{ item.title }}</span>
               <span class="time">{{ item.time }}</span>

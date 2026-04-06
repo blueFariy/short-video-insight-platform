@@ -158,6 +158,7 @@ class AlertRecordService:
                 user_id=user_id,
                 video_id=video.video_id,
                 platform=video.platform,
+                category=video.category or "",
                 title=video.title or "未知",
                 cover_url=video.cover_url or "",
                 video_url=video.url or "",
@@ -177,6 +178,7 @@ class AlertRecordService:
         is_read: Optional[bool] = None,
         platform: Optional[str] = None,
         keyword: Optional[str] = None,
+        categories: Optional[List[str]] = None,
         page: int = 1,
         page_size: int = 20
     ) -> Dict[str, Any]:
@@ -192,6 +194,8 @@ class AlertRecordService:
                 stmt = stmt.where(ViralAlert.platform == platform)
             if keyword:
                 stmt = stmt.where(ViralAlert.title.ilike(f"%{keyword}%"))
+            if categories:
+                stmt = stmt.where(ViralAlert.category.in_(categories))
 
             stmt = stmt.order_by(ViralAlert.created_at.desc())
 
@@ -212,6 +216,8 @@ class AlertRecordService:
                 count_stmt = count_stmt.where(ViralAlert.platform == platform)
             if keyword:
                 count_stmt = count_stmt.where(ViralAlert.title.ilike(f"%{keyword}%"))
+            if categories:
+                count_stmt = count_stmt.where(ViralAlert.category.in_(categories))
 
             total_result = await session.execute(count_stmt)
             total = len(list(total_result.scalars().all()))
@@ -259,6 +265,7 @@ class AlertRecordService:
             "id": alert.id,
             "video_id": alert.video_id,
             "platform": alert.platform,
+            "category": alert.category,
             "title": alert.title,
             "cover_url": alert.cover_url,
             "video_url": alert.video_url,
