@@ -2,6 +2,7 @@
 -- Video Insight Platform
 
 -- Users table
+DROP TABLE IF EXISTS users;
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
+DROP TABLE IF EXISTS creators;
 -- Creators table - 主键为 (platform, creator_id)
 CREATE TABLE IF NOT EXISTS creators (
     platform VARCHAR(20) NOT NULL,
@@ -49,6 +51,7 @@ CREATE TABLE IF NOT EXISTS creators (
 CREATE INDEX IF NOT EXISTS idx_creators_follower ON creators(follower_count DESC);
 CREATE INDEX IF NOT EXISTS idx_creators_monitored ON creators(is_monitored);
 
+DROP TABLE IF EXISTS videos;
 -- Videos table - creator_id 改为 VARCHAR(100) 存储平台的 creator_id
 CREATE TABLE IF NOT EXISTS videos (
     id BIGSERIAL PRIMARY KEY,
@@ -84,6 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_videos_play_count ON videos(play_count DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_category ON videos(category);
 CREATE INDEX IF NOT EXISTS idx_videos_creator ON videos(creator_id);
 
+DROP TABLE IF EXISTS video_scripts;
 -- Video Scripts table
 CREATE TABLE IF NOT EXISTS video_scripts (
     id BIGSERIAL PRIMARY KEY,
@@ -101,6 +105,7 @@ CREATE TABLE IF NOT EXISTS video_scripts (
 
 CREATE INDEX IF NOT EXISTS idx_video_scripts_video ON video_scripts(video_id);
 
+DROP TABLE IF EXISTS video_insights;
 -- Video Insights table
 CREATE TABLE IF NOT EXISTS video_insights (
     id BIGSERIAL PRIMARY KEY,
@@ -124,6 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_video_insights_video ON video_insights(video_id);
 CREATE INDEX IF NOT EXISTS idx_video_insights_hook_type ON video_insights(hook_type);
 CREATE INDEX IF NOT EXISTS idx_video_insights_structure ON video_insights(structure_type);
 
+DROP TABLE IF EXISTS collections;
 -- Collections table
 CREATE TABLE IF NOT EXISTS collections (
     id BIGSERIAL PRIMARY KEY,
@@ -140,6 +146,7 @@ CREATE TABLE IF NOT EXISTS collections (
 CREATE INDEX IF NOT EXISTS idx_collections_user ON collections(user_id);
 CREATE INDEX IF NOT EXISTS idx_collections_item ON collections(item_type, item_id);
 
+DROP TABLE IF EXISTS competitor_watch;
 -- Competitor Watch table
 CREATE TABLE IF NOT EXISTS competitor_watch (
     id BIGSERIAL PRIMARY KEY,
@@ -156,6 +163,7 @@ CREATE TABLE IF NOT EXISTS competitor_watch (
 
 CREATE INDEX IF NOT EXISTS idx_competitor_watch_user ON competitor_watch(user_id);
 
+DROP TABLE IF EXISTS trend_reports;
 -- Trend Reports table
 CREATE TABLE IF NOT EXISTS trend_reports (
     id BIGSERIAL PRIMARY KEY,
@@ -181,6 +189,7 @@ CREATE INDEX IF NOT EXISTS idx_trend_reports_type ON trend_reports(report_type);
 -- 爆款雷达相关表 (新增)
 -- ===========================================
 
+DROP TABLE IF EXISTS video_metric_snapshots;
 -- Video Metric Snapshots - 视频指标时序快照
 CREATE TABLE IF NOT EXISTS video_metric_snapshots (
     id BIGSERIAL PRIMARY KEY,
@@ -205,6 +214,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_video ON video_metric_snapshots(video_i
 CREATE INDEX IF NOT EXISTS idx_snapshots_time ON video_metric_snapshots(snapshot_time);
 CREATE INDEX IF NOT EXISTS idx_snapshot_video_time ON video_metric_snapshots(video_id, snapshot_time);
 
+DROP TABLE IF EXISTS user_interests;
 -- User Interests - 用户兴趣配置
 CREATE TABLE IF NOT EXISTS user_interests (
     id BIGSERIAL PRIMARY KEY,
@@ -221,6 +231,7 @@ CREATE TABLE IF NOT EXISTS user_interests (
 
 CREATE INDEX IF NOT EXISTS idx_user_interests_user ON user_interests(user_id);
 
+DROP TABLE IF EXISTS viral_alerts;
 -- Viral Alerts - 爆款预警记录
 CREATE TABLE IF NOT EXISTS viral_alerts (
     id BIGSERIAL PRIMARY KEY,
@@ -244,6 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_viral_alerts_video ON viral_alerts(video_id);
 CREATE INDEX IF NOT EXISTS idx_alert_user_read ON viral_alerts(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_alert_user_time ON viral_alerts(user_id, created_at);
 
+DROP TABLE IF EXISTS category_benchmarks;
 -- Category Benchmarks - 分类基准数据
 CREATE TABLE IF NOT EXISTS category_benchmarks (
     id BIGSERIAL PRIMARY KEY,
@@ -274,6 +286,7 @@ CREATE INDEX IF NOT EXISTS idx_benchmark_platform_cat ON category_benchmarks(pla
 -- 定时任务管理表 (新增)
 -- ===========================================
 
+DROP TABLE IF EXISTS scheduled_tasks;
 -- Scheduled Tasks - 定时任务配置
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
     task_id VARCHAR(100) PRIMARY KEY,
