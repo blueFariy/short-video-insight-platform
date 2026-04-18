@@ -66,7 +66,7 @@ async def get_current_user(
 @router.post(
     "/register",
     response_model=ResponseModel[UserBaseResponse],
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,  # 改为 200，前端拦截器只识别 200
     summary="用户注册"
 )
 async def register(

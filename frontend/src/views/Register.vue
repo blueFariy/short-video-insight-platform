@@ -131,11 +131,12 @@ const handleRegister = async () => {
         password: form.password
       }) as any
 
-      if (response.code === 200 || response.code === 0) {
+      // interceptor 返回的是 res.data，直接判断是否有返回数据即可
+      if (response && response.id) {
         ElMessage.success('注册成功，请登录')
         router.push('/login')
       } else {
-        ElMessage.error(response.message || '注册失败')
+        ElMessage.error(response?.message || '注册失败')
       }
     } catch (error: any) {
       console.error('Register error:', error)
