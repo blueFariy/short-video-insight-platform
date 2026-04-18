@@ -3,12 +3,29 @@ User Interest Service - 用户兴趣匹配服务
 根据用户关注的领域匹配爆款预警
 """
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from loguru import logger
 from sqlalchemy import select, and_
 
 from app.models import db_manager, UserInterest, Video, ViralAlert
 from app.schemas import Video, VideoMetrics, ViralSignal
+
+
+def parse_datetime(dt_str: str) -> datetime:
+    """解析日期时间字符串，支持多种格式"""
+    # 尝试多种格式
+    formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(dt_str, fmt)
+        except ValueError:
+            continue
+    # 如果都不匹配，使用 fromisoformat
+    return datetime.fromisoformat(dt_str)
 
 
 class UserInterestService:
@@ -179,6 +196,9 @@ class AlertRecordService:
         platform: Optional[str] = None,
         keyword: Optional[str] = None,
         categories: Optional[List[str]] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        sort_order: str = "asc",
         page: int = 1,
         page_size: int = 20
     ) -> Dict[str, Any]:
@@ -196,8 +216,19 @@ class AlertRecordService:
                 stmt = stmt.where(ViralAlert.title.ilike(f"%{keyword}%"))
             if categories:
                 stmt = stmt.where(ViralAlert.category.in_(categories))
+            # 时间范围筛选（支持精确到小时，格式: YYYY-MM-DD 或 YYYY-MM-DD HH:mm:ss）
+            if start_time:
+                start_dt = parse_datetime(start_time)
+                stmt = stmt.where(ViralAlert.created_at >= start_dt)
+            if end_time:
+                end_dt = parse_datetime(end_time)
+                stmt = stmt.where(ViralAlert.created_at <= end_dt)
 
-            stmt = stmt.order_by(ViralAlert.created_at.desc())
+            # 排序：asc最旧优先，desc最新优先
+            if sort_order == "desc":
+                stmt = stmt.order_by(ViralAlert.created_at.desc())
+            else:
+                stmt = stmt.order_by(ViralAlert.created_at.asc())
 
             # 分页
             offset = (page - 1) * page_size
@@ -218,6 +249,13 @@ class AlertRecordService:
                 count_stmt = count_stmt.where(ViralAlert.title.ilike(f"%{keyword}%"))
             if categories:
                 count_stmt = count_stmt.where(ViralAlert.category.in_(categories))
+            # 时间范围筛选（计数查询）
+            if start_time:
+                start_dt = parse_datetime(start_time)
+                count_stmt = count_stmt.where(ViralAlert.created_at >= start_dt)
+            if end_time:
+                end_dt = parse_datetime(end_time)
+                count_stmt = count_stmt.where(ViralAlert.created_at <= end_dt)
 
             total_result = await session.execute(count_stmt)
             total = len(list(total_result.scalars().all()))

@@ -53,6 +53,9 @@ async def get_alerts(
     platform: Optional[str] = Query(None, description="平台筛选"),
     keyword: Optional[str] = Query(None, description="关键词搜索(标题)"),
     categories: Optional[str] = Query(None, description="分类筛选列表(逗号分隔)"),
+    start_time: Optional[str] = Query(None, description="开始时间筛选 (格式: YYYY-MM-DD)"),
+    end_time: Optional[str] = Query(None, description="结束时间筛选 (格式: YYYY-MM-DD)"),
+    sort_order: str = Query("asc", description="排序方式：asc最旧优先，desc最新优先"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     current_user = Depends(get_current_user_id)
@@ -73,6 +76,9 @@ async def get_alerts(
         platform=platform,
         keyword=keyword,
         categories=categories_list,
+        start_time=start_time,
+        end_time=end_time,
+        sort_order=sort_order,
         page=page,
         page_size=page_size
     )

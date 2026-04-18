@@ -251,7 +251,6 @@ async def main():
     print("\n" + "=" * 60)
     print("BILIBILI COLLECTOR TEST SUITE")
     print("=" * 60)
-
     results = {}
 
     # 1. 测试全站排行榜
@@ -286,7 +285,7 @@ async def main():
 
     # 5. 测试创作者信息
     try:
-        results['creator'] = await get_creator_info_id(video.creator_id)
+        results['creator'] = await get_creator_info_id(168598)
     except Exception as e:
         print(f"ERROR in creator: {e}")
         results['creator'] = False

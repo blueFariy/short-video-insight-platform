@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { collectorService, API_URL } from '@/api'
+import { Refresh, List, Grid } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -12,7 +13,7 @@ let ws: WebSocket | null = null
 // 今日洞察 - 从 viral_alerts 获取
 const todayInsights = ref<any[]>([])
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(12)
 const totalCount = ref(0)
 
 // 筛选条件
@@ -22,18 +23,74 @@ const filterCategories = ref<string[]>([])  // 存储查询用的叶子节点值
 const filterCategoriesPath = ref<string[][]>([])  // 存储级联选择器的嵌套路径
 const filterPlatform = ref('')
 const filterKeyword = ref('')
+const filterDateRange = ref<[string, string] | null>(null)  // 时间范围筛选 (格式: YYYY-MM-DD HH:mm:ss)
 const sortOrder = ref<'desc' | 'asc'>('desc')
 
 // 分类选项（级联选择器）- 从后端获取
 const categoryOptions = ref<any[]>([])
+// 用户兴趣配置
+const userInterestCategories = ref<string[]>([])
+// 刷新状态
+const isRefreshing = ref(false)
+// 视图模式：list 或 card
+const viewMode = ref<'list' | 'card'>('list')
+// 每页条数选项
+const pageSizes = [12, 24, 36, 48, 60, 72, 84, 96]
 
-// 获取分类树
+// 获取用户兴趣配置
+const fetchUserInterest = async () => {
+  try {
+    const data = await collectorService.get(API_URL.COLLECTOR.USER_INTEREST_GET) as any
+    // collectorService interceptor 返回的是 res.data，所以 data 已经是 {category_weights: {...}, ...} 格式
+    if (data && data.category_weights && typeof data.category_weights === 'object') {
+      userInterestCategories.value = Object.keys(data.category_weights)
+      console.log('用户兴趣分类:', userInterestCategories.value)
+    }
+  } catch (error) {
+    console.error('获取用户兴趣配置失败:', error)
+    userInterestCategories.value = []
+  }
+}
+
+// 获取分类树并根据用户兴趣过滤
 const fetchCategories = async () => {
   try {
     // collectorService response interceptor already returns res.data, so res is the data directly
     const data = await collectorService.get(API_URL.COLLECTOR.CATEGORIES) as any
     if (data && Array.isArray(data)) {
-      categoryOptions.value = data
+      // 根据用户兴趣过滤分类
+      if (userInterestCategories.value.length > 0) {
+        // 收集所有主分类名称，用于排除本身就是独立主分类的子分类
+        const mainCategoryNames = new Set(data.map((c: any) => c.value))
+
+        const filtered = data
+          .map((category: any) => {
+            // 1. 如果主分类在用户兴趣中，显示整个分类及其所有子分类
+            if (userInterestCategories.value.includes(category.value)) {
+              return category
+            }
+            // 2. 如果主分类不在用户兴趣中，检查是否有子分类在用户兴趣中
+            // 但要排除那些本身就是独立主分类的子分类
+            const matchingChildren = category.children?.filter(
+              (child: any) =>
+                userInterestCategories.value.includes(child.value) &&
+                !mainCategoryNames.has(child.value)  // 排除本身就是独立主分类的子分类
+            )
+            // 如果有匹配的子分类，只返回包含这些子分类的分类（去重子分类）
+            if (matchingChildren && matchingChildren.length > 0) {
+              return {
+                ...category,
+                children: matchingChildren
+              }
+            }
+            return null
+          })
+          .filter((c: any) => c !== null)
+
+        categoryOptions.value = filtered
+      } else {
+        categoryOptions.value = data
+      }
     }
   } catch (error) {
     console.error('获取分类树失败:', error)
@@ -61,7 +118,8 @@ const fetchTodayInsights = async () => {
   try {
     const params: any = {
       page: currentPage.value,
-      page_size: pageSize.value
+      page_size: pageSize.value,
+      sort_order: sortOrder.value
     }
     if (filterAlertLevel.value) {
       params.alert_level = filterAlertLevel.value
@@ -79,6 +137,11 @@ const fetchTodayInsights = async () => {
     if (filterKeyword.value) {
       params.keyword = filterKeyword.value
     }
+    // 时间范围筛选（精确到小时）
+    if (filterDateRange.value && filterDateRange.value.length === 2) {
+      params.start_time = filterDateRange.value[0]
+      params.end_time = filterDateRange.value[1]
+    }
 
     const res = await collectorService.get(API_URL.COLLECTOR.ALERTS, {
       params
@@ -94,6 +157,7 @@ const fetchTodayInsights = async () => {
       platform: alert.platform,
       category: alert.category,
       title: alert.title,
+      coverUrl: alert.cover_url,
       url: alert.video_url,
       factors: alert.factors || [],
       time: alert.created_at ? alert.created_at.replace('T', ' ').substring(0, 16) : '',
@@ -303,6 +367,18 @@ const openVideoUrl = (url: string) => {
   }
 }
 
+// 图片加载失败处理
+const handleImageError = (e: Event) => {
+  const img = e.target as HTMLImageElement
+  img.style.display = 'none'
+}
+
+// 获取代理后的图片URL
+const getProxyImageUrl = (url: string) => {
+  if (!url) return ''
+  return `/collector/proxy/image?url=${encodeURIComponent(url)}`
+}
+
 // 平台标签
 const getPlatformTag = (platform: string) => {
   const map: Record<string, { label: string; type: string }> = {
@@ -381,8 +457,26 @@ const formatNumber = (num: number) => {
   return num.toString()
 }
 
-onMounted(() => {
-  fetchCategories()
+// 刷新今日洞察
+const handleRefresh = async () => {
+  isRefreshing.value = true
+  try {
+    await fetchTodayInsights()
+    ElMessage.success('刷新成功')
+  } catch (error) {
+    console.error('刷新失败:', error)
+    ElMessage.error('刷新失败')
+  } finally {
+    isRefreshing.value = false
+  }
+}
+
+onMounted(async () => {
+  // 先获取用户兴趣配置
+  await fetchUserInterest()
+  // 再获取分类树（根据用户兴趣过滤）
+  await fetchCategories()
+  // 获取今日洞察和爆款视频
   fetchTodayInsights()
   fetchViralVideos()
   connectWebSocket()
@@ -439,12 +533,30 @@ onUnmounted(() => {
               style="width: 220px"
             />
             <el-input v-model="filterKeyword" placeholder="关键词搜索" clearable @change="handleFilterChange" style="width: 150px" />
+            <el-date-picker
+              v-model="filterDateRange"
+              type="datetimerange"
+              range-separator="至"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              format="YYYY-MM-DD HH:mm"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              clearable
+              @change="handleFilterChange"
+              style="width: 340px"
+            />
             <el-radio-group v-model="sortOrder" @change="handleFilterChange">
               <el-radio-button value="desc">最新优先</el-radio-button>
-              <el-radio-button value="asc">最近优先</el-radio-button>
+              <el-radio-button value="asc">最旧优先</el-radio-button>
             </el-radio-group>
+            <el-button type="primary" :icon="Refresh" :loading="isRefreshing" @click="handleRefresh" circle title="刷新今日洞察" />
+            <el-button-group>
+              <el-button :type="viewMode === 'list' ? 'primary' : 'default'" :icon="List" @click="viewMode = 'list'" title="列表视图" />
+              <el-button :type="viewMode === 'card' ? 'primary' : 'default'" :icon="Grid" @click="viewMode = 'card'" title="卡片视图" />
+            </el-button-group>
           </div>
-          <div class="alert-list">
+          <!-- 列表视图 -->
+          <div v-if="viewMode === 'list'" class="alert-list">
             <div v-for="item in todayInsights" :key="item.id" class="alert-item" @click="handleInsightClick(item)">
               <el-tag v-if="item.is_read" type="success" size="small">已读</el-tag>
               <el-tag :type="getAlertLevelTag(item.type)" size="small">
@@ -464,10 +576,48 @@ onUnmounted(() => {
             <div class="pagination-wrapper">
               <el-pagination
                 v-model:current-page="currentPage"
-                :page-size="pageSize"
+                v-model:page-size="pageSize"
+                :page-sizes="pageSizes"
                 :total="totalCount"
-                layout="prev, pager, next"
+                layout="prev, pager, next, sizes"
                 @current-change="handlePageChange"
+                @size-change="handleFilterChange"
+              />
+            </div>
+          </div>
+          <!-- 卡片视图 -->
+          <div v-else class="alert-card-grid">
+            <div v-for="item in todayInsights" :key="item.id" class="alert-card-item" @click="handleInsightClick(item)">
+              <div class="card-cover" v-if="item.coverUrl">
+                <img :src="getProxyImageUrl(item.coverUrl)" alt="封面" @error="handleImageError" />
+              </div>
+              <div class="card-content">
+                <div class="card-tags">
+                  <el-tag v-if="item.is_read" type="success" size="small">已读</el-tag>
+                  <el-tag :type="getAlertLevelTag(item.type)" size="small">
+                    {{ getAlertLevelText(item.type) }}
+                  </el-tag>
+                  <el-tag :type="getPlatformTag(item.platform).type" size="small">
+                    {{ getPlatformTag(item.platform).label }}
+                  </el-tag>
+                  <el-tag v-if="item.category" type="info" size="small">
+                    {{ item.category }}
+                  </el-tag>
+                </div>
+                <div class="card-title">{{ item.title }}</div>
+                <div class="card-time">{{ item.time }}</div>
+              </div>
+            </div>
+            <!-- 翻页 -->
+            <div class="pagination-wrapper">
+              <el-pagination
+                v-model:current-page="currentPage"
+                v-model:page-size="pageSize"
+                :page-sizes="pageSizes"
+                :total="totalCount"
+                layout="prev, pager, next, sizes"
+                @current-change="handlePageChange"
+                @size-change="handleFilterChange"
               />
             </div>
           </div>
@@ -570,6 +720,9 @@ onUnmounted(() => {
         <div class="detail-title">
           <h3>{{ currentAlert.title }}</h3>
         </div>
+        <div class="detail-cover" v-if="currentAlert.coverUrl">
+          <img :src="getProxyImageUrl(currentAlert.coverUrl)" alt="视频封面" @error="handleImageError" />
+        </div>
         <div class="detail-factors" v-if="currentAlert.factors && currentAlert.factors.length > 0">
           <h4>影响因素：</h4>
           <ul>
@@ -671,39 +824,6 @@ onUnmounted(() => {
       }
     }
   }
-
-  .alert-detail {
-    .detail-row {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-
-    .detail-title {
-      margin-bottom: 16px;
-
-      h3 {
-        margin: 0;
-        word-break: break-all;
-      }
-    }
-
-    .detail-factors {
-      h4 {
-        margin: 0 0 8px;
-      }
-
-      ul {
-        margin: 0;
-        padding-left: 20px;
-
-        li {
-          margin-bottom: 4px;
-          color: var(--text-regular);
-        }
-      }
-    }
-  }
 }
 
 .quick-actions {
@@ -765,7 +885,8 @@ onUnmounted(() => {
     color: var(--text-secondary);
   }
 }
-n/* 弹窗内容居中样式 */
+
+/* 弹窗内容居中样式 */
 :deep(.insight-dialog) {
   .el-dialog__body {
     display: flex;
@@ -774,13 +895,57 @@ n/* 弹窗内容居中样式 */
     min-height: 150px;
     padding: 10px 20px;
   }
-}
 
-.alert-detail {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 120px;
+  .alert-detail {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 120px;
+
+    .detail-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .detail-title {
+      margin-bottom: 12px;
+
+      h3 {
+        margin: 0;
+        word-break: break-all;
+      }
+    }
+
+    .detail-cover {
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: center;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 8px;
+      }
+    }
+
+    .detail-factors {
+      h4 {
+        margin: 0 0 8px;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 20px;
+
+        li {
+          margin-bottom: 4px;
+          color: var(--text-regular);
+        }
+      }
+    }
+  }
 }
 
 .dialog-footer {
@@ -810,9 +975,75 @@ n/* 弹窗内容居中样式 */
   flex-wrap: wrap;
 }
 
+.alert-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 16px 0;
+
+  .alert-card-item {
+    background: var(--bg-color);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: 1px solid var(--border-color);
+
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .card-cover {
+      width: 100%;
+      height: 160px;
+      overflow: hidden;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+    }
+
+    .card-content {
+      padding: 12px;
+
+      .card-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 8px;
+
+        .el-tag {
+          margin-right: 0;
+        }
+      }
+
+      .card-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 8px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: break-all;
+      }
+
+      .card-time {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+    }
+  }
+}
+
 .pagination-wrapper {
   display: flex;
   justify-content: center;
   padding: 16px 0;
+  grid-column: 1 / -1;
 }
 </style>

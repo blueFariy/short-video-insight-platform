@@ -59,8 +59,9 @@ def run_async_batch(coros, max_concurrent=2, delay_between=2.0, max_retries=2, r
     批量运行协程，控制并发、间隔和重试机制
     """
 
+    semaphore = Semaphore(max_concurrent)
+
     async def controlled_coro_with_retry(coro, index):
-        semaphore = Semaphore(max_concurrent)
 
         async def execute_with_retry():
             async with semaphore:
@@ -263,10 +264,12 @@ def scan_new_videos_generator() -> Generator[Dict[str, Any], None, None]:
     zones = get_videos_zones()
     bilibili_rids = []
     for main_tid, zone in zones.items():
-        if main_tid in [5, 211, 217, 223, 234]:  # 过滤：娱乐5、美食211、动物圈217、汽车223、运动234
+        if main_tid in [5, 11, 23, 167, 177, 202, 211, 217, 223,
+                        234]:  # 过滤：娱乐5、电视剧11、电影23、国创167、纪录片177（子分区部分失效，将主分区作为采集对象）、资讯（热力值极低，将主分区作为采集对象）、美食211、动物圈217、汽车223、运动234
             continue
         bilibili_rids.extend(zone.values())
-    bilibili_rids = bilibili_rids[:]
+    bilibili_rids = [rid for rid in bilibili_rids if rid not in [257, 86, 246, 266, 265, 267, 244, 230, 19, 198, 157, 259, 261, 127]]   # 过滤热度值低的子分区：动画-配音257、动画-特摄86、音乐-乐评盘点243、音乐-音乐粉丝饭拍266、音乐-AI音乐265、音乐-电台267、音乐-音乐教学244、音乐-音乐综合·UTAU230、游戏-Mugen19、舞蹈-街舞198、时尚-美妆护肤157、影视-AI影像259、影视-影视综合261、鬼畜-教程演示127
+    bilibili_rids.extend([177, 202])  # 纪录片、资讯主分区
 
     try:
         from app.core.config import settings
@@ -343,10 +346,10 @@ def scan_new_videos_generator() -> Generator[Dict[str, Any], None, None]:
                     # 批量并行获取（自动带重试和限流）
                     creator_results = run_async_batch(
                         creator_coros,
-                        max_concurrent=2,  # 创作者请求并发数
-                        delay_between=random.uniform(3, 5),  # 请求间隔3~5s
+                        max_concurrent=4,  # 创作者请求并发数
+                        delay_between=10,  # 请求间隔10s
                         max_retries=3,  # 重试3次
-                        retry_delay=random.uniform(3, 5)  # 重试延迟3~5s
+                        retry_delay=20  # 重试延迟20、40、60...
                     )
 
                     # 创建创作者ID到信息的映射

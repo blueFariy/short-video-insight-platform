@@ -323,15 +323,16 @@ class ViralVideoAnalyzer:
         factors = []
 
         # 1. 播放量分析
+        play_count_str = f' ({self.predicted_multiplier * creator.avg_play_count / 10000:.1f}万) 是平均值的{self.predicted_multiplier:.1f}倍'
         if self.predicted_multiplier >= 20:
             factors.append(
-                f"🚀 （预计）播放量爆发 ({self.predicted_multiplier * creator.avg_play_count / 10000:.1f}万) 是平均值的{self.predicted_multiplier:.1f}倍")
+                f"🚀 （预计）播放量爆发{play_count_str}")
         elif self.predicted_multiplier >= 10:
             factors.append(
-                f"📈 （预计）播放量优秀 ({self.predicted_multiplier * creator.avg_play_count / 10000:.1f}万) 是平均值的{self.predicted_multiplier:.1f}倍")
+                f"📈 （预计）播放量优秀{play_count_str}")
         elif self.predicted_multiplier >= 5:
             factors.append(
-                f"👍 （预计）播放量良好 ({self.predicted_multiplier * creator.avg_play_count / 10000:.1f}万) 是平均值的{self.predicted_multiplier:.1f}倍")
+                f"👍 （预计）播放量良好{play_count_str}")
 
         # 2. 互动率分析
         if video.like_rate >= 10:
@@ -364,26 +365,51 @@ class ViralVideoAnalyzer:
 
         # 4. 时间因素
         hours_ago = (current_time - video.publish_time).total_seconds() / 3600
+        days_ago = hours_ago / 24
         if hours_ago <= 5:
             factors.append(f"⚡ 新发布视频 ({hours_ago:.0f}小时前)，正处于流量上升期")
         elif hours_ago <= 24:
             factors.append(f"🕐 发布{hours_ago:.0f}小时，黄金传播期")
+        elif hours_ago <= 72:
+            factors.append(f"📊 发布{hours_ago:.0f}小时，仍处于推荐辐射期")
+        elif days_ago <= 7:
+            factors.append(f"📈 发布{days_ago:.1f}天，流量趋于平稳，长尾效应开始显现")
+        elif days_ago <= 30:
+            factors.append(f"🌊 发布{days_ago:.0f}天，进入长尾流量期，搜索权重仍有效")
+        else:
+            factors.append(f"⏰ 发布{days_ago:.0f}天，经典内容，主要靠搜索和推荐召回")
 
         # 5. 时长分析
         opt_min, opt_max = self.optimal_duration.get(video.category, (30, 60))
-        if opt_min <= video.duration <= opt_max:
-            factors.append(f"⏱️ 时长精准 ({video.duration}秒)，符合{video.category}类最佳区间")
-        elif video.duration < opt_min:
-            factors.append(f"⚡ 短小精悍 ({video.duration}秒)，完播率高")
+        hours = video.duration // 3600
+        minutes = (video.duration % 3600) // 60
+        remaining_seconds = video.duration % 60
+
+        if hours > 0:
+            duration = f"{hours}:{minutes:02d}:{remaining_seconds:02d}"
         else:
-            factors.append(f"📺 深度内容 ({video.duration}秒)，需要强钩子维持完播率")
+            duration = f"{minutes}:{remaining_seconds:02d}"
+
+        if opt_min <= video.duration <= opt_max:
+            factors.append(f"⏱️ 时长精准 ({duration})，符合{video.category}类最佳区间 [{opt_min}, {opt_max}]")
+        elif video.duration < opt_min:
+            if video.duration <= opt_min * 0.5:
+                factors.append(
+                    f"⚡ 过短视频 ({duration}，最佳区间 [{opt_min}, {opt_max}])，完播率高但内容深度不足")
+            else:
+                factors.append(f"📱 偏短视频 ({duration}，最佳区间 [{opt_min}, {opt_max}])，信息密度略低")
+        else:
+            if video.duration >= opt_max * 1.5:
+                factors.append(f"📖 长视频 ({duration}，最佳区间 [{opt_min}, {opt_max}])，需要极强的叙事能力")
+            else:
+                factors.append(f"🔍 略长视频 ({duration}，最佳区间 [{opt_min}, {opt_max}])，轻微超出最佳区间")
 
         # 6. 更新频率分析
         optimal_interval = self.optimal_update_interval.get(video.category, 48)
         if creator.update_interval <= optimal_interval * 1.2:
-            factors.append(f"📅 更新频率稳定 ({creator.update_interval:.0f}h/更)，粉丝粘性高")
+            factors.append(f"📅 创作者更新频率稳定 ({creator.update_interval:.0f}h/更)，粉丝粘性高")
         else:
-            factors.append(f"⚠️ 更新间隔较长 ({creator.update_interval:.0f}h/更)，可能影响流量权重")
+            factors.append(f"⚠️ 创作者更新间隔较长 ({creator.update_interval:.0f}h/更)，可能影响流量权重")
 
         # 7. 平台与分类适配
         platform_factor = self.platform_factor.get(video.platform, 1.0)
